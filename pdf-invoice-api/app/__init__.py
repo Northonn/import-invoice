@@ -1,1 +1,0 @@
-"""PDF invoice extraction API."""
