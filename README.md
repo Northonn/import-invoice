@@ -57,12 +57,7 @@ Passo a passo:
 2. Crie uma conta em https://render.com.
 3. No Dashboard, escolha `New` > `Blueprint`.
 4. Conecte o repositorio GitHub.
-5. Se o repositorio tiver este projeto em uma subpasta, informe o caminho do Blueprint:
-
-```text
-outputs/pdf-invoice-api/render.yaml
-```
-
+5. O Render vai detectar o `render.yaml` na raiz do repositorio.
 6. Apos publicar, teste:
 
 ```bash
