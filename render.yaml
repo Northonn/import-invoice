@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: pdf-invoice-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: API_KEY
+        generateValue: true
+      - key: MAX_UPLOAD_MB
+        value: "25"
+      - key: PDFBOX_TIMEOUT_SECONDS
+        value: "60"
