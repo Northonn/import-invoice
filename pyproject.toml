@@ -5,6 +5,7 @@ description = "API Python para extrair texto de invoices em PDF usando Apache PD
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.111.0",
+  "openai>=1.93.0",
   "python-multipart>=0.0.9",
   "uvicorn[standard]>=0.30.0",
 ]
