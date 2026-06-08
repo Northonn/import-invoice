@@ -14,6 +14,8 @@ class Settings:
     pdfbox_jar: str = os.getenv("PDFBOX_JAR", "/opt/pdfbox/pdfbox-app.jar")
     java_bin: str = os.getenv("JAVA_BIN", "java")
     api_key: str | None = os.getenv("API_KEY")
+    openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
     max_upload_mb: int = _int_env("MAX_UPLOAD_MB", 25)
     pdfbox_timeout_seconds: int = _int_env("PDFBOX_TIMEOUT_SECONDS", 60)
 
