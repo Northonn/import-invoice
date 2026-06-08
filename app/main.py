@@ -3,6 +3,7 @@ import tempfile
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 
+from .invoice_parser import InvoiceParseError, parse_invoice_text
 from .pdfbox import ExtractOptions, PDFBoxError, extract_text_with_pdfbox
 from .settings import settings
 
@@ -35,6 +36,20 @@ def build_options(
         sort=sort,
         rotation_magic=rotation_magic,
     )
+
+
+def build_context(
+    id_tenant: int | None = Query(default=None),
+    id_usuario_incluiu: int | None = Query(default=None),
+    id_processoimportacao: int | None = Query(default=None),
+    include_extracted_text: bool = Query(default=False),
+) -> dict[str, int | bool | None]:
+    return {
+        "id_tenant": id_tenant,
+        "id_usuario_incluiu": id_usuario_incluiu,
+        "id_processoimportacao": id_processoimportacao,
+        "include_extracted_text": include_extracted_text,
+    }
 
 
 def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions) -> str:
@@ -78,7 +93,28 @@ def health() -> dict[str, str | bool]:
         "status": "ok",
         "pdfbox_jar_configured": bool(settings.pdfbox_jar),
         "pdfbox_jar_exists": Path(settings.pdfbox_jar).exists(),
+        "openai_configured": bool(settings.openai_api_key),
+        "openai_model": settings.openai_model,
     }
+
+
+def parse_text_to_invoice_import(
+    *,
+    text: str,
+    filename: str | None,
+    context: dict[str, int | bool | None],
+) -> dict:
+    try:
+        return parse_invoice_text(
+            text=text,
+            filename=filename,
+            id_tenant=context["id_tenant"],  # type: ignore[arg-type]
+            id_usuario_incluiu=context["id_usuario_incluiu"],  # type: ignore[arg-type]
+            id_processoimportacao=context["id_processoimportacao"],  # type: ignore[arg-type]
+            include_extracted_text=bool(context["include_extracted_text"]),
+        )
+    except InvoiceParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/v1/pdf/extract-text")
@@ -105,6 +141,30 @@ async def extract_text_multipart(
     }
 
 
+@app.post("/v1/invoice/extract-and-parse")
+async def extract_and_parse_invoice_multipart(
+    file: UploadFile = File(...),
+    _: None = Depends(require_api_key),
+    options: ExtractOptions = Depends(build_options),
+    context: dict[str, int | bool | None] = Depends(build_context),
+) -> dict:
+    if file.content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=415, detail="Envie um arquivo PDF.")
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        pdf_path = Path(tmp.name)
+        byte_count = await write_upload_to_file(file, pdf_path)
+        text = extract_from_temp_pdf(pdf_path, options)
+
+    parsed = parse_text_to_invoice_import(text=text, filename=file.filename, context=context)
+    return {
+        "filename": file.filename,
+        "bytes": byte_count,
+        "text_length": len(text),
+        **parsed,
+    }
+
+
 @app.post("/v1/pdf/extract-text/raw")
 async def extract_text_raw_pdf(
     request: Request,
@@ -128,4 +188,30 @@ async def extract_text_raw_pdf(
         "text": text,
         "sort": options.sort,
         "rotation_magic": options.rotation_magic,
+    }
+
+
+@app.post("/v1/invoice/extract-and-parse/raw")
+async def extract_and_parse_invoice_raw_pdf(
+    request: Request,
+    filename: str | None = Query(default=None),
+    _: None = Depends(require_api_key),
+    options: ExtractOptions = Depends(build_options),
+    context: dict[str, int | bool | None] = Depends(build_context),
+) -> dict:
+    content_type = request.headers.get("content-type", "").split(";")[0].lower()
+    if content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=415, detail="Content-Type deve ser application/pdf.")
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        pdf_path = Path(tmp.name)
+        byte_count = await write_request_stream_to_file(request, pdf_path)
+        text = extract_from_temp_pdf(pdf_path, options)
+
+    parsed = parse_text_to_invoice_import(text=text, filename=filename, context=context)
+    return {
+        "filename": filename,
+        "bytes": byte_count,
+        "text_length": len(text),
+        **parsed,
     }
