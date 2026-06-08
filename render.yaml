@@ -11,3 +11,5 @@ services:
         value: "25"
       - key: PDFBOX_TIMEOUT_SECONDS
         value: "60"
+      - key: OPENAI_MODEL
+        value: "gpt-4.1-mini"
