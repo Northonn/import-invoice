@@ -6,6 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.111.0",
   "openai>=1.93.0",
+  "pdfplumber>=0.11.0",
+  "pillow>=10.0.0",
+  "pypdfium2>=4.30.0",
+  "pytesseract>=0.3.13",
   "python-multipart>=0.0.9",
   "uvicorn[standard]>=0.30.0",
 ]
