@@ -15,6 +15,8 @@ class ExtractOptions:
     password: str | None = None
     sort: bool = True
     rotation_magic: bool = False
+    enable_ocr: bool = True
+    force_ocr: bool = False
 
 
 def extract_text_with_pdfbox(
