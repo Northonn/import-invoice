@@ -9,7 +9,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates \
+    && apt-get install -y --no-install-recommends \
+      openjdk-17-jre-headless \
+      curl \
+      ca-certificates \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-por \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /opt/pdfbox \
     && curl -fsSL "https://archive.apache.org/dist/pdfbox/${PDFBOX_VERSION}/pdfbox-app-${PDFBOX_VERSION}.jar" \
