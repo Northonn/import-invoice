@@ -30,6 +30,26 @@ MODEL_PRICES_USD_PER_1M_TOKENS = {
         "cached_input": 0.10,
         "output": 1.60,
     },
+    "gpt-5-mini": {
+        "input": 0.25,
+        "cached_input": 0.025,
+        "output": 2.00,
+    },
+    "gpt-5-mini-2025-08-07": {
+        "input": 0.25,
+        "cached_input": 0.025,
+        "output": 2.00,
+    },
+    "gpt-4o-mini": {
+        "input": 0.15,
+        "cached_input": 0.075,
+        "output": 0.60,
+    },
+    "gpt-4o-mini-2024-07-18": {
+        "input": 0.15,
+        "cached_input": 0.075,
+        "output": 0.60,
+    },
 }
 
 
@@ -56,15 +76,17 @@ def parse_invoice_text(
     id_usuario_incluiu: int | None,
     id_processoimportacao: int | None,
     include_extracted_text: bool,
+    openai_model: str | None,
     request_id: str,
 ) -> dict[str, Any]:
     if not settings.openai_api_key:
         raise InvoiceParseError("OPENAI_API_KEY nao configurada no servidor.")
 
+    selected_model = openai_model or settings.openai_model
     logger.info(
         "request_id=%s stage=openai_parse_start model=%s text_chars=%s filename=%s",
         request_id,
-        settings.openai_model,
+        selected_model,
         len(text),
         filename,
     )
@@ -84,7 +106,7 @@ def parse_invoice_text(
     try:
         started_at = perf_counter()
         response = client.responses.create(
-            model=settings.openai_model,
+            model=selected_model,
             input=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
@@ -112,7 +134,7 @@ def parse_invoice_text(
         logger.exception("request_id=%s stage=openai_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI: {exc}") from exc
 
-    usage = _build_usage_summary(response, settings.openai_model)
+    usage = _build_usage_summary(response, selected_model)
     _log_usage(request_id=request_id, stage="openai_usage", usage=usage)
 
     try:
@@ -142,7 +164,7 @@ def parse_invoice_text(
     )
 
     return {
-        "model": settings.openai_model,
+        "model": selected_model,
         "usage": usage,
         "text_length": len(text),
         "invoice_import": parsed,
@@ -157,15 +179,17 @@ def parse_invoice_pdf_file(
     id_tenant: int | None,
     id_usuario_incluiu: int | None,
     id_processoimportacao: int | None,
+    openai_model: str | None,
     request_id: str,
 ) -> dict[str, Any]:
     if not settings.openai_api_key:
         raise InvoiceParseError("OPENAI_API_KEY nao configurada no servidor.")
 
+    selected_model = openai_model or settings.openai_model
     logger.info(
         "request_id=%s stage=openai_pdf_parse_start model=%s filename=%s bytes=%s",
         request_id,
-        settings.openai_model,
+        selected_model,
         filename,
         pdf_path.stat().st_size,
     )
@@ -195,7 +219,7 @@ def parse_invoice_pdf_file(
     try:
         started_at = perf_counter()
         response = client.responses.create(
-            model=settings.openai_model,
+            model=selected_model,
             input=[
                 {
                     "role": "system",
@@ -235,7 +259,7 @@ def parse_invoice_pdf_file(
         logger.exception("request_id=%s stage=openai_pdf_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI com PDF: {exc}") from exc
 
-    usage = _build_usage_summary(response, settings.openai_model)
+    usage = _build_usage_summary(response, selected_model)
     _log_usage(request_id=request_id, stage="openai_pdf_usage", usage=usage)
 
     try:
@@ -263,7 +287,7 @@ def parse_invoice_pdf_file(
     )
 
     return {
-        "model": settings.openai_model,
+        "model": selected_model,
         "usage": usage,
         "invoice_import": parsed,
         "pending_fields": pending_fields,
