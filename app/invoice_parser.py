@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
+import base64
 import json
 import logging
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -125,6 +127,122 @@ def parse_invoice_text(
     return {
         "model": settings.openai_model,
         "text_length": len(text),
+        "invoice_import": parsed,
+        "pending_fields": pending_fields,
+    }
+
+
+def parse_invoice_pdf_file(
+    *,
+    pdf_path: Path,
+    filename: str | None,
+    id_tenant: int | None,
+    id_usuario_incluiu: int | None,
+    id_processoimportacao: int | None,
+    request_id: str,
+) -> dict[str, Any]:
+    if not settings.openai_api_key:
+        raise InvoiceParseError("OPENAI_API_KEY nao configurada no servidor.")
+
+    logger.info(
+        "request_id=%s stage=openai_pdf_parse_start model=%s filename=%s bytes=%s",
+        request_id,
+        settings.openai_model,
+        filename,
+        pdf_path.stat().st_size,
+    )
+
+    client = OpenAI(api_key=settings.openai_api_key)
+    context = {
+        "id_tenant": id_tenant,
+        "id_usuario_incluiu": id_usuario_incluiu,
+        "id_processoimportacao": id_processoimportacao,
+    }
+
+    started_at = perf_counter()
+    base64_pdf = base64.b64encode(pdf_path.read_bytes()).decode("utf-8")
+    logger.info(
+        "request_id=%s stage=openai_pdf_base64_done elapsed_ms=%s base64_chars=%s",
+        request_id,
+        _elapsed_ms(started_at),
+        len(base64_pdf),
+    )
+
+    instruction = {
+        "filename": filename,
+        "context": context,
+        "task": "Analise este PDF de invoice, incluindo paginas escaneadas/imagens, e retorne o JSON estruturado.",
+    }
+
+    try:
+        started_at = perf_counter()
+        response = client.responses.create(
+            model=settings.openai_model,
+            input=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_file",
+                            "filename": filename or "invoice.pdf",
+                            "file_data": f"data:application/pdf;base64,{base64_pdf}",
+                        },
+                        {
+                            "type": "input_text",
+                            "text": json.dumps(instruction, ensure_ascii=False),
+                        },
+                    ],
+                },
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "invoice_import",
+                    "strict": True,
+                    "schema": INVOICE_IMPORT_SCHEMA,
+                }
+            },
+        )
+        logger.info(
+            "request_id=%s stage=openai_pdf_response_done elapsed_ms=%s output_chars=%s",
+            request_id,
+            _elapsed_ms(started_at),
+            len(response.output_text or ""),
+        )
+    except OpenAIError as exc:
+        logger.exception("request_id=%s stage=openai_pdf_error error=%s", request_id, exc)
+        raise InvoiceParseError(f"Erro ao chamar OpenAI com PDF: {exc}") from exc
+
+    try:
+        parsed = json.loads(response.output_text)
+    except (TypeError, json.JSONDecodeError) as exc:
+        logger.exception("request_id=%s stage=openai_pdf_json_error", request_id)
+        raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
+
+    parsed["schema_version"] = "1.0"
+    parsed["source"] = {
+        "type": "pdf_invoice",
+        "filename": filename,
+        "extracted_text": None,
+        "extracted_at": datetime.now(UTC).isoformat(),
+    }
+    parsed["context"] = context
+    parsed["required_for_insert"] = REQUIRED_FOR_INSERT
+
+    pending_fields = find_pending_required_fields(parsed)
+    logger.info(
+        "request_id=%s stage=openai_pdf_parse_done items=%s pending_fields=%s",
+        request_id,
+        len(parsed.get("items") or []),
+        len(pending_fields),
+    )
+
+    return {
+        "model": settings.openai_model,
         "invoice_import": parsed,
         "pending_fields": pending_fields,
     }
