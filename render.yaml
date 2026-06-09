@@ -18,8 +18,10 @@ services:
       - key: OCR_LANGUAGE
         value: "eng+por"
       - key: OCR_DPI
-        value: "200"
+        value: "150"
       - key: OCR_MAX_PAGES
-        value: "5"
+        value: "1"
+      - key: OCR_PAGE_TIMEOUT_SECONDS
+        value: "20"
       - key: MIN_TEXT_CHARS_FOR_OCR
         value: "80"
