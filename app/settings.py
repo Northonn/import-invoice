@@ -20,8 +20,9 @@ class Settings:
     pdfbox_timeout_seconds: int = _int_env("PDFBOX_TIMEOUT_SECONDS", 60)
     ocr_enabled: bool = os.getenv("OCR_ENABLED", "true").lower() in {"1", "true", "yes", "s"}
     ocr_language: str = os.getenv("OCR_LANGUAGE", "eng+por")
-    ocr_dpi: int = _int_env("OCR_DPI", 200)
-    ocr_max_pages: int = _int_env("OCR_MAX_PAGES", 5)
+    ocr_dpi: int = _int_env("OCR_DPI", 150)
+    ocr_max_pages: int = _int_env("OCR_MAX_PAGES", 1)
+    ocr_page_timeout_seconds: int = _int_env("OCR_PAGE_TIMEOUT_SECONDS", 20)
     min_text_chars_for_ocr: int = _int_env("MIN_TEXT_CHARS_FOR_OCR", 80)
 
     @property
