@@ -11,6 +11,8 @@ O PDFBox nao e uma API HTTP pronta; ele e uma biblioteca/ferramenta Java. Este p
 - `POST /v1/pdf/extract-text/raw`: recebe o corpo bruto com `Content-Type: application/pdf`. Este endpoint costuma ser mais simples para enviar BLOB do Oracle APEX.
 - `POST /v1/invoice/extract-and-parse`: recebe PDF em `multipart/form-data`, extrai texto e transforma em JSON de importacao usando OpenAI.
 - `POST /v1/invoice/extract-and-parse/raw`: recebe PDF bruto, extrai texto e transforma em JSON de importacao usando OpenAI. Recomendado para APEX.
+- `POST /v1/invoice/parse-pdf-openai`: recebe PDF em `multipart/form-data` e envia o PDF diretamente para a OpenAI analisar texto/imagem e transformar em JSON.
+- `POST /v1/invoice/parse-pdf-openai/raw`: recebe PDF bruto e envia o PDF diretamente para a OpenAI analisar texto/imagem e transformar em JSON. Recomendado para PDF escaneado/imagem.
 
 Parametros opcionais de query:
 
@@ -25,12 +27,7 @@ Parametros opcionais de query:
 - `id_usuario_incluiu`: ID do usuario logado no sistema.
 - `id_processoimportacao`: ID do processo de importacao, se ja existir.
 - `include_extracted_text`: inclui o texto extraido dentro de `invoice_import.source.extracted_text`. Padrao: `false`.
-
-A resposta de extracao inclui:
-
-- `extraction_method`: `pdfbox`, `pdfplumber` ou `ocr_tesseract`.
-- `attempted_extraction_methods`: metodos tentados em ordem.
-- `extraction_warnings`: avisos de fallback.
+- `openai_model`: modelo usado na analise da invoice. Se omitido, usa `OPENAI_MODEL`. Permitidos: `gpt-4.1-mini`, `gpt-4.1-mini-2025-04-14`, `gpt-5-mini`, `gpt-5-mini-2025-08-07`, `gpt-4o-mini`, `gpt-4o-mini-2024-07-18`.
 
 ## Publicacao com Docker
 
@@ -64,7 +61,7 @@ curl -X POST "http://localhost:8000/v1/pdf/extract-text/raw?filename=invoice.pdf
 Forcar OCR em PDF escaneado/imagem:
 
 ```bash
-curl -X POST "http://localhost:8000/v1/pdf/extract-text?force_ocr=true&end_page=1" \
+curl -X POST "http://localhost:8000/v1/pdf/extract-text?force_ocr=true" \
   -H "X-API-Key: troque-esta-chave" \
   -F "file=@invoice-escaneada.pdf;type=application/pdf"
 ```
@@ -81,6 +78,23 @@ Extrair e analisar invoice via PDF bruto:
 
 ```bash
 curl -X POST "http://localhost:8000/v1/invoice/extract-and-parse/raw?filename=invoice.pdf&id_tenant=1&id_usuario_incluiu=10" \
+  -H "X-API-Key: troque-esta-chave" \
+  -H "Content-Type: application/pdf" \
+  --data-binary "@invoice.pdf"
+```
+
+Analisar PDF escaneado/imagem diretamente com OpenAI:
+
+```bash
+curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai?id_tenant=1&id_usuario_incluiu=10&openai_model=gpt-4o-mini" \
+  -H "X-API-Key: troque-esta-chave" \
+  -F "file=@invoice-escaneada.pdf;type=application/pdf"
+```
+
+Analisar PDF bruto diretamente com OpenAI:
+
+```bash
+curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai/raw?filename=invoice.pdf&id_tenant=1&id_usuario_incluiu=10&openai_model=gpt-4o-mini" \
   -H "X-API-Key: troque-esta-chave" \
   -H "Content-Type: application/pdf" \
   --data-binary "@invoice.pdf"
@@ -120,7 +134,6 @@ Requisitos:
 
 - Python 3.11+
 - Java 17+
-- Tesseract OCR
 - `pdfbox-app-3.0.5.jar`
 
 Baixe o PDFBox:
@@ -156,17 +169,17 @@ begin
   apex_web_service.g_request_headers(2).value := 'troque-esta-chave';
 
   l_response := apex_web_service.make_rest_request(
-    p_url         => 'https://seu-dominio.com/v1/invoice/extract-and-parse/raw?filename=invoice.pdf&id_tenant=1&id_usuario_incluiu=10',
+    p_url         => 'https://seu-dominio.com/v1/pdf/extract-text/raw?filename=invoice.pdf',
     p_http_method => 'POST',
     p_body_blob   => :P10_INVOICE_BLOB
   );
 
-  -- l_response contem JSON com invoice_import e pending_fields.
+  -- l_response contem JSON com o campo "text".
 end;
 /
 ```
 
-Depois de receber o JSON, grave em staging ou APEX Collection para revisao antes de inserir em `IMP_INVOICE` e `IMP_INVOICE_ITEM`.
+Depois de extrair o texto, o proximo passo e criar uma camada de parser para identificar numero da invoice, exportador, importador, moeda, valores, incoterm, pesos, itens e NCM/HS Code quando existir.
 
 ## Variaveis de ambiente
 
