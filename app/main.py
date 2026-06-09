@@ -1,5 +1,9 @@
 from pathlib import Path
+import logging
+import sys
 import tempfile
+from time import perf_counter
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 
@@ -8,6 +12,14 @@ from .pdfbox import ExtractOptions, PDFBoxError
 from .settings import settings
 from .text_extractor import TextExtractionResult, extract_text_from_pdf
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    stream=sys.stdout,
+    force=True,
+)
+logger = logging.getLogger("pdf_invoice_api.main")
 
 app = FastAPI(
     title="PDF Invoice API",
@@ -57,32 +69,46 @@ def build_context(
     }
 
 
-def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions) -> TextExtractionResult:
+def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions, request_id: str) -> TextExtractionResult:
     try:
-        return extract_text_from_pdf(pdf_path, options)
+        return extract_text_from_pdf(pdf_path, options, request_id)
     except PDFBoxError as exc:
+        logger.exception("request_id=%s stage=extract_error error=%s", request_id, exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-async def write_request_stream_to_file(request: Request, destination: Path) -> int:
+async def write_request_stream_to_file(request: Request, destination: Path, request_id: str) -> int:
     total = 0
+    logger.info("request_id=%s stage=raw_upload_start", request_id)
+    started_at = perf_counter()
     with destination.open("wb") as buffer:
         async for chunk in request.stream():
             total += len(chunk)
             if total > settings.max_upload_bytes:
+                logger.warning("request_id=%s stage=upload_too_large bytes=%s", request_id, total)
                 raise HTTPException(status_code=413, detail="PDF excede o tamanho maximo permitido.")
             buffer.write(chunk)
+    logger.info("request_id=%s stage=raw_upload_done elapsed_ms=%s bytes=%s", request_id, _elapsed_ms(started_at), total)
     return total
 
 
-async def write_upload_to_file(upload: UploadFile, destination: Path) -> int:
+async def write_upload_to_file(upload: UploadFile, destination: Path, request_id: str) -> int:
     total = 0
+    logger.info(
+        "request_id=%s stage=multipart_upload_start filename=%s content_type=%s",
+        request_id,
+        upload.filename,
+        upload.content_type,
+    )
+    started_at = perf_counter()
     with destination.open("wb") as buffer:
         while chunk := await upload.read(1024 * 1024):
             total += len(chunk)
             if total > settings.max_upload_bytes:
+                logger.warning("request_id=%s stage=upload_too_large bytes=%s", request_id, total)
                 raise HTTPException(status_code=413, detail="PDF excede o tamanho maximo permitido.")
             buffer.write(chunk)
+    logger.info("request_id=%s stage=multipart_upload_done elapsed_ms=%s bytes=%s", request_id, _elapsed_ms(started_at), total)
     return total
 
 
@@ -104,6 +130,7 @@ def parse_text_to_invoice_import(
     text: str,
     filename: str | None,
     context: dict[str, int | bool | None],
+    request_id: str,
 ) -> dict:
     try:
         return parse_invoice_text(
@@ -113,8 +140,10 @@ def parse_text_to_invoice_import(
             id_usuario_incluiu=context["id_usuario_incluiu"],  # type: ignore[arg-type]
             id_processoimportacao=context["id_processoimportacao"],  # type: ignore[arg-type]
             include_extracted_text=bool(context["include_extracted_text"]),
+            request_id=request_id,
         )
     except InvoiceParseError as exc:
+        logger.exception("request_id=%s stage=parse_error error=%s", request_id, exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
@@ -123,16 +152,22 @@ async def extract_text_multipart(
     file: UploadFile = File(...),
     _: None = Depends(require_api_key),
     options: ExtractOptions = Depends(build_options),
-) -> dict[str, str | int | bool | list[str] | None]:
+) -> dict[str, str | int | bool | None]:
+    request_id = new_request_id()
+    logger.info("request_id=%s endpoint=/v1/pdf/extract-text stage=request_start filename=%s", request_id, file.filename)
     if file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Envie um arquivo PDF.")
 
+    started_at = perf_counter()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
-        byte_count = await write_upload_to_file(file, pdf_path)
-        extraction = extract_from_temp_pdf(pdf_path, options)
+        byte_count = await write_upload_to_file(file, pdf_path, request_id)
+        extraction = extract_from_temp_pdf(pdf_path, options, request_id)
+
+    logger.info("request_id=%s endpoint=/v1/pdf/extract-text stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
 
     return {
+        "request_id": request_id,
         "filename": file.filename,
         "bytes": byte_count,
         "text_length": len(extraction.text),
@@ -152,16 +187,21 @@ async def extract_and_parse_invoice_multipart(
     options: ExtractOptions = Depends(build_options),
     context: dict[str, int | bool | None] = Depends(build_context),
 ) -> dict:
+    request_id = new_request_id()
+    logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse stage=request_start filename=%s", request_id, file.filename)
     if file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Envie um arquivo PDF.")
 
+    started_at = perf_counter()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
-        byte_count = await write_upload_to_file(file, pdf_path)
-        extraction = extract_from_temp_pdf(pdf_path, options)
+        byte_count = await write_upload_to_file(file, pdf_path, request_id)
+        extraction = extract_from_temp_pdf(pdf_path, options, request_id)
 
-    parsed = parse_text_to_invoice_import(text=extraction.text, filename=file.filename, context=context)
+    parsed = parse_text_to_invoice_import(text=extraction.text, filename=file.filename, context=context, request_id=request_id)
+    logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
     return {
+        "request_id": request_id,
         "filename": file.filename,
         "bytes": byte_count,
         "text_length": len(extraction.text),
@@ -178,17 +218,23 @@ async def extract_text_raw_pdf(
     filename: str | None = Query(default=None),
     _: None = Depends(require_api_key),
     options: ExtractOptions = Depends(build_options),
-) -> dict[str, str | int | bool | list[str] | None]:
+) -> dict[str, str | int | bool | None]:
+    request_id = new_request_id()
+    logger.info("request_id=%s endpoint=/v1/pdf/extract-text/raw stage=request_start filename=%s", request_id, filename)
     content_type = request.headers.get("content-type", "").split(";")[0].lower()
     if content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Content-Type deve ser application/pdf.")
 
+    started_at = perf_counter()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
-        byte_count = await write_request_stream_to_file(request, pdf_path)
-        extraction = extract_from_temp_pdf(pdf_path, options)
+        byte_count = await write_request_stream_to_file(request, pdf_path, request_id)
+        extraction = extract_from_temp_pdf(pdf_path, options, request_id)
+
+    logger.info("request_id=%s endpoint=/v1/pdf/extract-text/raw stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
 
     return {
+        "request_id": request_id,
         "filename": filename,
         "bytes": byte_count,
         "text_length": len(extraction.text),
@@ -209,17 +255,22 @@ async def extract_and_parse_invoice_raw_pdf(
     options: ExtractOptions = Depends(build_options),
     context: dict[str, int | bool | None] = Depends(build_context),
 ) -> dict:
+    request_id = new_request_id()
+    logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse/raw stage=request_start filename=%s", request_id, filename)
     content_type = request.headers.get("content-type", "").split(";")[0].lower()
     if content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Content-Type deve ser application/pdf.")
 
+    started_at = perf_counter()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
-        byte_count = await write_request_stream_to_file(request, pdf_path)
-        extraction = extract_from_temp_pdf(pdf_path, options)
+        byte_count = await write_request_stream_to_file(request, pdf_path, request_id)
+        extraction = extract_from_temp_pdf(pdf_path, options, request_id)
 
-    parsed = parse_text_to_invoice_import(text=extraction.text, filename=filename, context=context)
+    parsed = parse_text_to_invoice_import(text=extraction.text, filename=filename, context=context, request_id=request_id)
+    logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse/raw stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
     return {
+        "request_id": request_id,
         "filename": filename,
         "bytes": byte_count,
         "text_length": len(extraction.text),
@@ -228,3 +279,11 @@ async def extract_and_parse_invoice_raw_pdf(
         "extraction_warnings": extraction.warnings,
         **parsed,
     }
+
+
+def new_request_id() -> str:
+    return uuid4().hex[:12]
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return round((perf_counter() - started_at) * 1000)
