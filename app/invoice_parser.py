@@ -1,11 +1,16 @@
 from datetime import UTC, datetime
 import json
+import logging
+from time import perf_counter
 from typing import Any
 
 from openai import OpenAI, OpenAIError
 
 from .invoice_schema import INVOICE_IMPORT_SCHEMA, REQUIRED_FOR_INSERT
 from .settings import settings
+
+
+logger = logging.getLogger("pdf_invoice_api.invoice_parser")
 
 
 class InvoiceParseError(RuntimeError):
@@ -35,10 +40,18 @@ def parse_invoice_text(
     id_usuario_incluiu: int | None,
     id_processoimportacao: int | None,
     include_extracted_text: bool,
+    request_id: str,
 ) -> dict[str, Any]:
     if not settings.openai_api_key:
         raise InvoiceParseError("OPENAI_API_KEY nao configurada no servidor.")
 
+    logger.info(
+        "request_id=%s stage=openai_parse_start model=%s text_chars=%s filename=%s",
+        request_id,
+        settings.openai_model,
+        len(text),
+        filename,
+    )
     client = OpenAI(api_key=settings.openai_api_key)
     context = {
         "id_tenant": id_tenant,
@@ -53,6 +66,7 @@ def parse_invoice_text(
     }
 
     try:
+        started_at = perf_counter()
         response = client.responses.create(
             model=settings.openai_model,
             input=[
@@ -72,12 +86,22 @@ def parse_invoice_text(
                 }
             },
         )
+        logger.info(
+            "request_id=%s stage=openai_response_done elapsed_ms=%s output_chars=%s",
+            request_id,
+            _elapsed_ms(started_at),
+            len(response.output_text or ""),
+        )
     except OpenAIError as exc:
+        logger.exception("request_id=%s stage=openai_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI: {exc}") from exc
 
     try:
+        started_at = perf_counter()
         parsed = json.loads(response.output_text)
+        logger.info("request_id=%s stage=openai_json_loaded elapsed_ms=%s", request_id, _elapsed_ms(started_at))
     except (TypeError, json.JSONDecodeError) as exc:
+        logger.exception("request_id=%s stage=openai_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
     parsed["schema_version"] = "1.0"
@@ -90,11 +114,19 @@ def parse_invoice_text(
     parsed["context"] = context
     parsed["required_for_insert"] = REQUIRED_FOR_INSERT
 
+    pending_fields = find_pending_required_fields(parsed)
+    logger.info(
+        "request_id=%s stage=openai_parse_done items=%s pending_fields=%s",
+        request_id,
+        len(parsed.get("items") or []),
+        len(pending_fields),
+    )
+
     return {
         "model": settings.openai_model,
         "text_length": len(text),
         "invoice_import": parsed,
-        "pending_fields": find_pending_required_fields(parsed),
+        "pending_fields": pending_fields,
     }
 
 
@@ -135,3 +167,7 @@ def _get_path(payload: dict[str, Any], path: str) -> Any:
 
 def _value_is_missing(value: Any) -> bool:
     return value is None or value == ""
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return round((perf_counter() - started_at) * 1000)
