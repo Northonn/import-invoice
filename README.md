@@ -64,7 +64,7 @@ curl -X POST "http://localhost:8000/v1/pdf/extract-text/raw?filename=invoice.pdf
 Forcar OCR em PDF escaneado/imagem:
 
 ```bash
-curl -X POST "http://localhost:8000/v1/pdf/extract-text?force_ocr=true" \
+curl -X POST "http://localhost:8000/v1/pdf/extract-text?force_ocr=true&end_page=1" \
   -H "X-API-Key: troque-esta-chave" \
   -F "file=@invoice-escaneada.pdf;type=application/pdf"
 ```
@@ -179,6 +179,7 @@ Depois de receber o JSON, grave em staging ou APEX Collection para revisao antes
 - `PDFBOX_TIMEOUT_SECONDS`: timeout de extracao. Padrao: `60`.
 - `OCR_ENABLED`: habilita fallback por OCR. Padrao: `true`.
 - `OCR_LANGUAGE`: idiomas do Tesseract. Padrao: `eng+por`.
-- `OCR_DPI`: resolucao usada para renderizar paginas antes do OCR. Padrao: `200`.
-- `OCR_MAX_PAGES`: numero maximo de paginas enviadas ao OCR. Padrao: `5`.
+- `OCR_DPI`: resolucao usada para renderizar paginas antes do OCR. Padrao: `150`.
+- `OCR_MAX_PAGES`: numero maximo de paginas enviadas ao OCR. Padrao: `1`.
+- `OCR_PAGE_TIMEOUT_SECONDS`: timeout por pagina no Tesseract. Padrao: `20`.
 - `MIN_TEXT_CHARS_FOR_OCR`: minimo de caracteres para considerar que a extracao textual foi suficiente. Padrao: `80`.
