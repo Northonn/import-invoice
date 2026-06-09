@@ -21,6 +21,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pdf_invoice_api.main")
 
+ALLOWED_OPENAI_MODELS = {
+    "gpt-4.1-mini",
+    "gpt-4.1-mini-2025-04-14",
+    "gpt-5-mini",
+    "gpt-5-mini-2025-08-07",
+    "gpt-4o-mini",
+    "gpt-4o-mini-2024-07-18",
+}
+
 app = FastAPI(
     title="PDF Invoice API",
     version="0.1.0",
@@ -67,6 +76,16 @@ def build_context(
         "id_processoimportacao": id_processoimportacao,
         "include_extracted_text": include_extracted_text,
     }
+
+
+def build_openai_model(openai_model: str | None = Query(default=None)) -> str | None:
+    if openai_model is None:
+        return None
+    normalized_model = openai_model.strip()
+    if normalized_model not in ALLOWED_OPENAI_MODELS:
+        allowed = ", ".join(sorted(ALLOWED_OPENAI_MODELS))
+        raise HTTPException(status_code=422, detail=f"openai_model invalido. Modelos permitidos: {allowed}.")
+    return normalized_model
 
 
 def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions, request_id: str) -> TextExtractionResult:
@@ -120,6 +139,7 @@ def health() -> dict[str, str | bool]:
         "pdfbox_jar_exists": Path(settings.pdfbox_jar).exists(),
         "openai_configured": bool(settings.openai_api_key),
         "openai_model": settings.openai_model,
+        "allowed_openai_models": sorted(ALLOWED_OPENAI_MODELS),
         "ocr_enabled": settings.ocr_enabled,
         "ocr_language": settings.ocr_language,
     }
@@ -130,6 +150,7 @@ def parse_text_to_invoice_import(
     text: str,
     filename: str | None,
     context: dict[str, int | bool | None],
+    openai_model: str | None,
     request_id: str,
 ) -> dict:
     try:
@@ -140,6 +161,7 @@ def parse_text_to_invoice_import(
             id_usuario_incluiu=context["id_usuario_incluiu"],  # type: ignore[arg-type]
             id_processoimportacao=context["id_processoimportacao"],  # type: ignore[arg-type]
             include_extracted_text=bool(context["include_extracted_text"]),
+            openai_model=openai_model,
             request_id=request_id,
         )
     except InvoiceParseError as exc:
@@ -186,6 +208,7 @@ async def extract_and_parse_invoice_multipart(
     _: None = Depends(require_api_key),
     options: ExtractOptions = Depends(build_options),
     context: dict[str, int | bool | None] = Depends(build_context),
+    openai_model: str | None = Depends(build_openai_model),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse stage=request_start filename=%s", request_id, file.filename)
@@ -198,7 +221,13 @@ async def extract_and_parse_invoice_multipart(
         byte_count = await write_upload_to_file(file, pdf_path, request_id)
         extraction = extract_from_temp_pdf(pdf_path, options, request_id)
 
-    parsed = parse_text_to_invoice_import(text=extraction.text, filename=file.filename, context=context, request_id=request_id)
+    parsed = parse_text_to_invoice_import(
+        text=extraction.text,
+        filename=file.filename,
+        context=context,
+        openai_model=openai_model,
+        request_id=request_id,
+    )
     logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
     return {
         "request_id": request_id,
@@ -217,6 +246,7 @@ async def parse_invoice_pdf_openai_multipart(
     file: UploadFile = File(...),
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
+    openai_model: str | None = Depends(build_openai_model),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_start filename=%s", request_id, file.filename)
@@ -231,6 +261,7 @@ async def parse_invoice_pdf_openai_multipart(
             pdf_path=pdf_path,
             filename=file.filename,
             context=context,
+            openai_model=openai_model,
             request_id=request_id,
         )
 
@@ -286,6 +317,7 @@ async def extract_and_parse_invoice_raw_pdf(
     _: None = Depends(require_api_key),
     options: ExtractOptions = Depends(build_options),
     context: dict[str, int | bool | None] = Depends(build_context),
+    openai_model: str | None = Depends(build_openai_model),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse/raw stage=request_start filename=%s", request_id, filename)
@@ -299,7 +331,13 @@ async def extract_and_parse_invoice_raw_pdf(
         byte_count = await write_request_stream_to_file(request, pdf_path, request_id)
         extraction = extract_from_temp_pdf(pdf_path, options, request_id)
 
-    parsed = parse_text_to_invoice_import(text=extraction.text, filename=filename, context=context, request_id=request_id)
+    parsed = parse_text_to_invoice_import(
+        text=extraction.text,
+        filename=filename,
+        context=context,
+        openai_model=openai_model,
+        request_id=request_id,
+    )
     logger.info("request_id=%s endpoint=/v1/invoice/extract-and-parse/raw stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
     return {
         "request_id": request_id,
@@ -319,6 +357,7 @@ async def parse_invoice_pdf_openai_raw(
     filename: str | None = Query(default=None),
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
+    openai_model: str | None = Depends(build_openai_model),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_start filename=%s", request_id, filename)
@@ -334,6 +373,7 @@ async def parse_invoice_pdf_openai_raw(
             pdf_path=pdf_path,
             filename=filename,
             context=context,
+            openai_model=openai_model,
             request_id=request_id,
         )
 
@@ -356,6 +396,7 @@ def parse_pdf_file_to_invoice_import(
     pdf_path: Path,
     filename: str | None,
     context: dict[str, int | bool | None],
+    openai_model: str | None,
     request_id: str,
 ) -> dict:
     try:
@@ -365,6 +406,7 @@ def parse_pdf_file_to_invoice_import(
             id_tenant=context["id_tenant"],  # type: ignore[arg-type]
             id_usuario_incluiu=context["id_usuario_incluiu"],  # type: ignore[arg-type]
             id_processoimportacao=context["id_processoimportacao"],  # type: ignore[arg-type]
+            openai_model=openai_model,
             request_id=request_id,
         )
     except InvoiceParseError as exc:
