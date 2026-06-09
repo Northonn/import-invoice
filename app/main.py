@@ -4,8 +4,9 @@ import tempfile
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 
 from .invoice_parser import InvoiceParseError, parse_invoice_text
-from .pdfbox import ExtractOptions, PDFBoxError, extract_text_with_pdfbox
+from .pdfbox import ExtractOptions, PDFBoxError
 from .settings import settings
+from .text_extractor import TextExtractionResult, extract_text_from_pdf
 
 
 app = FastAPI(
@@ -26,6 +27,8 @@ def build_options(
     password: str | None = Query(default=None),
     sort: bool = Query(default=True),
     rotation_magic: bool = Query(default=False),
+    enable_ocr: bool = Query(default=True),
+    force_ocr: bool = Query(default=False),
 ) -> ExtractOptions:
     if start_page and end_page and end_page < start_page:
         raise HTTPException(status_code=422, detail="end_page deve ser maior ou igual a start_page.")
@@ -35,6 +38,8 @@ def build_options(
         password=password,
         sort=sort,
         rotation_magic=rotation_magic,
+        enable_ocr=enable_ocr,
+        force_ocr=force_ocr,
     )
 
 
@@ -52,15 +57,9 @@ def build_context(
     }
 
 
-def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions) -> str:
+def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions) -> TextExtractionResult:
     try:
-        return extract_text_with_pdfbox(
-            pdf_path=pdf_path,
-            pdfbox_jar=settings.pdfbox_jar,
-            java_bin=settings.java_bin,
-            timeout_seconds=settings.pdfbox_timeout_seconds,
-            options=options,
-        )
+        return extract_text_from_pdf(pdf_path, options)
     except PDFBoxError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -95,6 +94,8 @@ def health() -> dict[str, str | bool]:
         "pdfbox_jar_exists": Path(settings.pdfbox_jar).exists(),
         "openai_configured": bool(settings.openai_api_key),
         "openai_model": settings.openai_model,
+        "ocr_enabled": settings.ocr_enabled,
+        "ocr_language": settings.ocr_language,
     }
 
 
@@ -122,20 +123,23 @@ async def extract_text_multipart(
     file: UploadFile = File(...),
     _: None = Depends(require_api_key),
     options: ExtractOptions = Depends(build_options),
-) -> dict[str, str | int | bool | None]:
+) -> dict[str, str | int | bool | list[str] | None]:
     if file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Envie um arquivo PDF.")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_upload_to_file(file, pdf_path)
-        text = extract_from_temp_pdf(pdf_path, options)
+        extraction = extract_from_temp_pdf(pdf_path, options)
 
     return {
         "filename": file.filename,
         "bytes": byte_count,
-        "text_length": len(text),
-        "text": text,
+        "text_length": len(extraction.text),
+        "text": extraction.text,
+        "extraction_method": extraction.method,
+        "attempted_extraction_methods": extraction.attempted_methods,
+        "extraction_warnings": extraction.warnings,
         "sort": options.sort,
         "rotation_magic": options.rotation_magic,
     }
@@ -154,13 +158,16 @@ async def extract_and_parse_invoice_multipart(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_upload_to_file(file, pdf_path)
-        text = extract_from_temp_pdf(pdf_path, options)
+        extraction = extract_from_temp_pdf(pdf_path, options)
 
-    parsed = parse_text_to_invoice_import(text=text, filename=file.filename, context=context)
+    parsed = parse_text_to_invoice_import(text=extraction.text, filename=file.filename, context=context)
     return {
         "filename": file.filename,
         "bytes": byte_count,
-        "text_length": len(text),
+        "text_length": len(extraction.text),
+        "extraction_method": extraction.method,
+        "attempted_extraction_methods": extraction.attempted_methods,
+        "extraction_warnings": extraction.warnings,
         **parsed,
     }
 
@@ -171,7 +178,7 @@ async def extract_text_raw_pdf(
     filename: str | None = Query(default=None),
     _: None = Depends(require_api_key),
     options: ExtractOptions = Depends(build_options),
-) -> dict[str, str | int | bool | None]:
+) -> dict[str, str | int | bool | list[str] | None]:
     content_type = request.headers.get("content-type", "").split(";")[0].lower()
     if content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Content-Type deve ser application/pdf.")
@@ -179,13 +186,16 @@ async def extract_text_raw_pdf(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_request_stream_to_file(request, pdf_path)
-        text = extract_from_temp_pdf(pdf_path, options)
+        extraction = extract_from_temp_pdf(pdf_path, options)
 
     return {
         "filename": filename,
         "bytes": byte_count,
-        "text_length": len(text),
-        "text": text,
+        "text_length": len(extraction.text),
+        "text": extraction.text,
+        "extraction_method": extraction.method,
+        "attempted_extraction_methods": extraction.attempted_methods,
+        "extraction_warnings": extraction.warnings,
         "sort": options.sort,
         "rotation_magic": options.rotation_magic,
     }
@@ -206,12 +216,15 @@ async def extract_and_parse_invoice_raw_pdf(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_request_stream_to_file(request, pdf_path)
-        text = extract_from_temp_pdf(pdf_path, options)
+        extraction = extract_from_temp_pdf(pdf_path, options)
 
-    parsed = parse_text_to_invoice_import(text=text, filename=filename, context=context)
+    parsed = parse_text_to_invoice_import(text=extraction.text, filename=filename, context=context)
     return {
         "filename": filename,
         "bytes": byte_count,
-        "text_length": len(text),
+        "text_length": len(extraction.text),
+        "extraction_method": extraction.method,
+        "attempted_extraction_methods": extraction.attempted_methods,
+        "extraction_warnings": extraction.warnings,
         **parsed,
     }
