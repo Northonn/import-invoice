@@ -24,7 +24,7 @@ class TextExtractionResult:
 
 def extract_text_from_pdf(pdf_path: Path, options: ExtractOptions, request_id: str) -> TextExtractionResult:
     logger.info(
-        "request_id=%s stage=extract_start force_ocr=%s enable_ocr=%s start_page=%s end_page=%s ocr_dpi=%s ocr_max_pages=%s",
+        "request_id=%s stage=extract_start force_ocr=%s enable_ocr=%s start_page=%s end_page=%s ocr_dpi=%s ocr_max_pages=%s ocr_page_timeout_seconds=%s",
         request_id,
         options.force_ocr,
         options.enable_ocr,
@@ -32,6 +32,7 @@ def extract_text_from_pdf(pdf_path: Path, options: ExtractOptions, request_id: s
         options.end_page,
         settings.ocr_dpi,
         settings.ocr_max_pages,
+        settings.ocr_page_timeout_seconds,
     )
     attempted_methods: list[str] = []
     warnings: list[str] = []
@@ -153,7 +154,22 @@ def extract_text_with_ocr(pdf_path: Path, options: ExtractOptions, request_id: s
         )
         ocr_started_at = perf_counter()
         logger.info("request_id=%s stage=ocr_page_tesseract_start page=%s", request_id, page_index + 1)
-        text = pytesseract.image_to_string(image, lang=settings.ocr_language)
+        try:
+            text = pytesseract.image_to_string(
+                image,
+                lang=settings.ocr_language,
+                timeout=settings.ocr_page_timeout_seconds,
+            )
+        except RuntimeError as exc:
+            logger.exception(
+                "request_id=%s stage=ocr_page_tesseract_timeout page=%s timeout_seconds=%s",
+                request_id,
+                page_index + 1,
+                settings.ocr_page_timeout_seconds,
+            )
+            raise PDFBoxError(
+                f"OCR excedeu o timeout de {settings.ocr_page_timeout_seconds}s na pagina {page_index + 1}."
+            ) from exc
         logger.info(
             "request_id=%s stage=ocr_page_tesseract_done page=%s elapsed_ms=%s text_chars=%s",
             request_id,
