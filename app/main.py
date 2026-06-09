@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 
-from .invoice_parser import InvoiceParseError, parse_invoice_text
+from .invoice_parser import InvoiceParseError, parse_invoice_pdf_file, parse_invoice_text
 from .pdfbox import ExtractOptions, PDFBoxError
 from .settings import settings
 from .text_extractor import TextExtractionResult, extract_text_from_pdf
@@ -212,6 +212,38 @@ async def extract_and_parse_invoice_multipart(
     }
 
 
+@app.post("/v1/invoice/parse-pdf-openai")
+async def parse_invoice_pdf_openai_multipart(
+    file: UploadFile = File(...),
+    _: None = Depends(require_api_key),
+    context: dict[str, int | bool | None] = Depends(build_context),
+) -> dict:
+    request_id = new_request_id()
+    logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_start filename=%s", request_id, file.filename)
+    if file.content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=415, detail="Envie um arquivo PDF.")
+
+    started_at = perf_counter()
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        pdf_path = Path(tmp.name)
+        byte_count = await write_upload_to_file(file, pdf_path, request_id)
+        parsed = parse_pdf_file_to_invoice_import(
+            pdf_path=pdf_path,
+            filename=file.filename,
+            context=context,
+            request_id=request_id,
+        )
+
+    logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
+    return {
+        "request_id": request_id,
+        "filename": file.filename,
+        "bytes": byte_count,
+        "extraction_method": "openai_pdf_vision",
+        **parsed,
+    }
+
+
 @app.post("/v1/pdf/extract-text/raw")
 async def extract_text_raw_pdf(
     request: Request,
@@ -281,8 +313,63 @@ async def extract_and_parse_invoice_raw_pdf(
     }
 
 
+@app.post("/v1/invoice/parse-pdf-openai/raw")
+async def parse_invoice_pdf_openai_raw(
+    request: Request,
+    filename: str | None = Query(default=None),
+    _: None = Depends(require_api_key),
+    context: dict[str, int | bool | None] = Depends(build_context),
+) -> dict:
+    request_id = new_request_id()
+    logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_start filename=%s", request_id, filename)
+    content_type = request.headers.get("content-type", "").split(";")[0].lower()
+    if content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=415, detail="Content-Type deve ser application/pdf.")
+
+    started_at = perf_counter()
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        pdf_path = Path(tmp.name)
+        byte_count = await write_request_stream_to_file(request, pdf_path, request_id)
+        parsed = parse_pdf_file_to_invoice_import(
+            pdf_path=pdf_path,
+            filename=filename,
+            context=context,
+            request_id=request_id,
+        )
+
+    logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
+    return {
+        "request_id": request_id,
+        "filename": filename,
+        "bytes": byte_count,
+        "extraction_method": "openai_pdf_vision",
+        **parsed,
+    }
+
+
 def new_request_id() -> str:
     return uuid4().hex[:12]
+
+
+def parse_pdf_file_to_invoice_import(
+    *,
+    pdf_path: Path,
+    filename: str | None,
+    context: dict[str, int | bool | None],
+    request_id: str,
+) -> dict:
+    try:
+        return parse_invoice_pdf_file(
+            pdf_path=pdf_path,
+            filename=filename,
+            id_tenant=context["id_tenant"],  # type: ignore[arg-type]
+            id_usuario_incluiu=context["id_usuario_incluiu"],  # type: ignore[arg-type]
+            id_processoimportacao=context["id_processoimportacao"],  # type: ignore[arg-type]
+            request_id=request_id,
+        )
+    except InvoiceParseError as exc:
+        logger.exception("request_id=%s stage=parse_pdf_error error=%s", request_id, exc)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _elapsed_ms(started_at: float) -> int:
