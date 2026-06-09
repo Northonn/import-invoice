@@ -19,10 +19,18 @@ Parametros opcionais de query:
 - `password`: senha do PDF, se houver.
 - `sort`: ordena texto por posicao antes de escrever. Padrao: `true`.
 - `rotation_magic`: tenta corrigir texto rotacionado/inclinado. Padrao: `false`.
+- `enable_ocr`: permite OCR quando PDFBox/pdfplumber retornarem pouco texto. Padrao: `true`.
+- `force_ocr`: ignora PDFBox/pdfplumber e tenta OCR diretamente. Padrao: `false`.
 - `id_tenant`: ID do tenant vindo do sistema.
 - `id_usuario_incluiu`: ID do usuario logado no sistema.
 - `id_processoimportacao`: ID do processo de importacao, se ja existir.
 - `include_extracted_text`: inclui o texto extraido dentro de `invoice_import.source.extracted_text`. Padrao: `false`.
+
+A resposta de extracao inclui:
+
+- `extraction_method`: `pdfbox`, `pdfplumber` ou `ocr_tesseract`.
+- `attempted_extraction_methods`: metodos tentados em ordem.
+- `extraction_warnings`: avisos de fallback.
 
 ## Publicacao com Docker
 
@@ -51,6 +59,14 @@ curl -X POST "http://localhost:8000/v1/pdf/extract-text/raw?filename=invoice.pdf
   -H "X-API-Key: troque-esta-chave" \
   -H "Content-Type: application/pdf" \
   --data-binary "@invoice.pdf"
+```
+
+Forcar OCR em PDF escaneado/imagem:
+
+```bash
+curl -X POST "http://localhost:8000/v1/pdf/extract-text?force_ocr=true" \
+  -H "X-API-Key: troque-esta-chave" \
+  -F "file=@invoice-escaneada.pdf;type=application/pdf"
 ```
 
 Extrair e analisar invoice com OpenAI:
@@ -104,6 +120,7 @@ Requisitos:
 
 - Python 3.11+
 - Java 17+
+- Tesseract OCR
 - `pdfbox-app-3.0.5.jar`
 
 Baixe o PDFBox:
@@ -160,3 +177,8 @@ Depois de receber o JSON, grave em staging ou APEX Collection para revisao antes
 - `JAVA_BIN`: binario Java. Padrao: `java`.
 - `MAX_UPLOAD_MB`: tamanho maximo do PDF. Padrao: `25`.
 - `PDFBOX_TIMEOUT_SECONDS`: timeout de extracao. Padrao: `60`.
+- `OCR_ENABLED`: habilita fallback por OCR. Padrao: `true`.
+- `OCR_LANGUAGE`: idiomas do Tesseract. Padrao: `eng+por`.
+- `OCR_DPI`: resolucao usada para renderizar paginas antes do OCR. Padrao: `200`.
+- `OCR_MAX_PAGES`: numero maximo de paginas enviadas ao OCR. Padrao: `5`.
+- `MIN_TEXT_CHARS_FOR_OCR`: minimo de caracteres para considerar que a extracao textual foi suficiente. Padrao: `80`.
