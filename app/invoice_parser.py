@@ -19,6 +19,20 @@ class InvoiceParseError(RuntimeError):
     pass
 
 
+MODEL_PRICES_USD_PER_1M_TOKENS = {
+    "gpt-4.1-mini": {
+        "input": 0.40,
+        "cached_input": 0.10,
+        "output": 1.60,
+    },
+    "gpt-4.1-mini-2025-04-14": {
+        "input": 0.40,
+        "cached_input": 0.10,
+        "output": 1.60,
+    },
+}
+
+
 SYSTEM_PROMPT = """
 Voce e um extrator de dados de commercial invoices de comercio exterior.
 Retorne JSON conforme o schema informado.
@@ -98,6 +112,9 @@ def parse_invoice_text(
         logger.exception("request_id=%s stage=openai_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI: {exc}") from exc
 
+    usage = _build_usage_summary(response, settings.openai_model)
+    _log_usage(request_id=request_id, stage="openai_usage", usage=usage)
+
     try:
         started_at = perf_counter()
         parsed = json.loads(response.output_text)
@@ -126,6 +143,7 @@ def parse_invoice_text(
 
     return {
         "model": settings.openai_model,
+        "usage": usage,
         "text_length": len(text),
         "invoice_import": parsed,
         "pending_fields": pending_fields,
@@ -217,6 +235,9 @@ def parse_invoice_pdf_file(
         logger.exception("request_id=%s stage=openai_pdf_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI com PDF: {exc}") from exc
 
+    usage = _build_usage_summary(response, settings.openai_model)
+    _log_usage(request_id=request_id, stage="openai_pdf_usage", usage=usage)
+
     try:
         parsed = json.loads(response.output_text)
     except (TypeError, json.JSONDecodeError) as exc:
@@ -243,6 +264,7 @@ def parse_invoice_pdf_file(
 
     return {
         "model": settings.openai_model,
+        "usage": usage,
         "invoice_import": parsed,
         "pending_fields": pending_fields,
     }
@@ -285,6 +307,73 @@ def _get_path(payload: dict[str, Any], path: str) -> Any:
 
 def _value_is_missing(value: Any) -> bool:
     return value is None or value == ""
+
+
+def _build_usage_summary(response: Any, model: str) -> dict[str, Any]:
+    usage = _serialize_openai_object(getattr(response, "usage", None)) or {}
+    usage["estimated_cost_usd"] = _estimate_cost_usd(usage, model)
+    return usage
+
+
+def _serialize_openai_object(value: Any) -> Any:
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {key: _serialize_openai_object(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_serialize_openai_object(item) for item in value]
+    return value
+
+
+def _estimate_cost_usd(usage: dict[str, Any], model: str) -> dict[str, float | None]:
+    prices = MODEL_PRICES_USD_PER_1M_TOKENS.get(model)
+    if not prices:
+        return {
+            "input": None,
+            "cached_input": None,
+            "output": None,
+            "total": None,
+        }
+
+    input_tokens = _number_or_zero(usage.get("input_tokens"))
+    output_tokens = _number_or_zero(usage.get("output_tokens"))
+    cached_tokens = _cached_input_tokens(usage)
+    non_cached_input_tokens = max(input_tokens - cached_tokens, 0)
+
+    input_cost = non_cached_input_tokens / 1_000_000 * prices["input"]
+    cached_input_cost = cached_tokens / 1_000_000 * prices["cached_input"]
+    output_cost = output_tokens / 1_000_000 * prices["output"]
+
+    return {
+        "input": round(input_cost, 8),
+        "cached_input": round(cached_input_cost, 8),
+        "output": round(output_cost, 8),
+        "total": round(input_cost + cached_input_cost + output_cost, 8),
+    }
+
+
+def _cached_input_tokens(usage: dict[str, Any]) -> int:
+    details = usage.get("input_tokens_details") or {}
+    if not isinstance(details, dict):
+        return 0
+    return _number_or_zero(details.get("cached_tokens"))
+
+
+def _number_or_zero(value: Any) -> int:
+    if isinstance(value, int | float):
+        return int(value)
+    return 0
+
+
+def _log_usage(*, request_id: str, stage: str, usage: dict[str, Any]) -> None:
+    logger.info(
+        "request_id=%s stage=%s usage=%s",
+        request_id,
+        stage,
+        json.dumps(usage, ensure_ascii=False, sort_keys=True),
+    )
 
 
 def _elapsed_ms(started_at: float) -> int:
