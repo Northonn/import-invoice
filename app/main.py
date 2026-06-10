@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 import logging
 import sys
 import tempfile
@@ -132,7 +133,7 @@ async def write_upload_to_file(upload: UploadFile, destination: Path, request_id
 
 
 @app.get("/health")
-def health() -> dict[str, str | bool]:
+def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "pdfbox_jar_configured": bool(settings.pdfbox_jar),
