@@ -64,6 +64,11 @@ Numeros devem ser retornados como number, sem simbolo de moeda e sem separador d
 Use ponto como separador decimal.
 Moedas devem usar codigo ISO quando aparecer, por exemplo USD, EUR, BRL.
 Incoterms devem usar codigo curto quando aparecer, por exemplo EXW, FOB, CIF.
+Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
+Customer Reference, Customer PO, PO Number, Purchase Order, Order No ou rotulo equivalente.
+Grave somente o valor da referencia em invoice.pedido_importacao.numero_pedido_importacao_extraido e o rotulo
+encontrado em invoice.pedido_importacao.rotulo_referencia_extraido. Nao confunda essa referencia com numero da invoice,
+shipment, tracking, entrega ou ordem interna do fornecedor.
 Itens devem representar as linhas de mercadoria da invoice, nao dados bancarios ou totais.
 """.strip()
 
