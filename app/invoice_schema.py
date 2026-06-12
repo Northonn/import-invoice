@@ -80,6 +80,7 @@ INVOICE_IMPORT_SCHEMA = obj(
                 "pedido_importacao": obj(
                     {
                         "id_pedidoimportacao": nullable("integer"),
+                        "referencia_original_extraida": nullable("string"),
                         "numero_pedido_importacao_extraido": nullable("string"),
                         "rotulo_referencia_extraido": nullable("string"),
                     }
