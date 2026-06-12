@@ -77,6 +77,13 @@ INVOICE_IMPORT_SCHEMA = obj(
                 "num_invoice": nullable("string"),
                 "data_invoice": nullable("string"),
                 "ind_status": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
+                "pedido_importacao": obj(
+                    {
+                        "id_pedidoimportacao": nullable("integer"),
+                        "numero_pedido_importacao_extraido": nullable("string"),
+                        "rotulo_referencia_extraido": nullable("string"),
+                    }
+                ),
                 "exportador": person_schema,
                 "importador": obj(
                     {
