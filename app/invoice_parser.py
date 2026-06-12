@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 from pathlib import Path
+import re
 from time import perf_counter
 from typing import Any
 
@@ -66,9 +67,15 @@ Moedas devem usar codigo ISO quando aparecer, por exemplo USD, EUR, BRL.
 Incoterms devem usar codigo curto quando aparecer, por exemplo EXW, FOB, CIF.
 Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
 Customer Reference, Customer PO, PO Number, Purchase Order, Order No ou rotulo equivalente.
-Grave somente o valor da referencia em invoice.pedido_importacao.numero_pedido_importacao_extraido e o rotulo
-encontrado em invoice.pedido_importacao.rotulo_referencia_extraido. Nao confunda essa referencia com numero da invoice,
-shipment, tracking, entrega ou ordem interna do fornecedor.
+Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
+Em invoice.pedido_importacao.numero_pedido_importacao_extraido, retorne apenas o identificador limpo do pedido.
+Remova do inicio termos de rotulo como PO, P.O., P/O, PO.:, Purchase Order, Order, Doc., Document, Documento,
+Referencia, Ref. e combinacoes como Customer Ref ou Customer PO, alem de dois-pontos, pontos, barras e espacos
+usados somente como separadores. Nao remova letras, numeros, hifens ou barras que pertencam ao identificador.
+Exemplos: "PO.: 4500587997" vira "4500587997"; "Customer Ref: P/O 12345-A" vira "12345-A";
+"PO12345" permanece "PO12345", pois PO faz parte do identificador sem separador.
+Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraido. Nao confunda essa referencia
+com numero da invoice, shipment, tracking, entrega ou ordem interna do fornecedor.
 Itens devem representar as linhas de mercadoria da invoice, nao dados bancarios ou totais.
 """.strip()
 
@@ -150,6 +157,7 @@ def parse_invoice_text(
         logger.exception("request_id=%s stage=openai_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
+    _normalize_customer_order_reference(parsed)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -273,6 +281,7 @@ def parse_invoice_pdf_file(
         logger.exception("request_id=%s stage=openai_pdf_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
+    _normalize_customer_order_reference(parsed)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -317,6 +326,31 @@ def find_pending_required_fields(payload: dict[str, Any]) -> list[str]:
                 pending.append(field.replace("items[]", f"items[{index}]"))
 
     return pending
+
+
+def _normalize_customer_order_reference(payload: dict[str, Any]) -> None:
+    invoice = payload.get("invoice")
+    if not isinstance(invoice, dict):
+        return
+
+    order = invoice.get("pedido_importacao")
+    if not isinstance(order, dict):
+        return
+
+    normalized = order.get("numero_pedido_importacao_extraido")
+    original = order.get("referencia_original_extraida") or normalized
+    if not isinstance(original, str) or not original.strip():
+        return
+
+    order["referencia_original_extraida"] = original.strip()
+    value = normalized if isinstance(normalized, str) and normalized.strip() else original
+    prefix_pattern = re.compile(
+        r"^(?:(?:customer\s+)?(?:purchase\s+order|p\s*[./]\s*o|p\.\s*o\.|po|order|"
+        r"doc(?:ument(?:o)?)?\.?|refer.ncia|ref\.?)\b[\s:;#./-]*)+",
+        re.IGNORECASE,
+    )
+    cleaned = prefix_pattern.sub("", value.strip()).strip(" \t\r\n:;#.,/\\-")
+    order["numero_pedido_importacao_extraido"] = cleaned or None
 
 
 def _get_path(payload: dict[str, Any], path: str) -> Any:
