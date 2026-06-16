@@ -76,7 +76,15 @@ Exemplos: "PO.: 4500587997" vira "4500587997"; "Customer Ref: P/O 12345-A" vira 
 "PO12345" permanece "PO12345", pois PO faz parte do identificador sem separador.
 Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraido. Nao confunda essa referencia
 com numero da invoice, shipment, tracking, entrega ou ordem interna do fornecedor.
-Itens devem representar as linhas de mercadoria da invoice, nao dados bancarios ou totais.
+Itens devem representar somente as linhas comerciais totalizadas da invoice, nao dados bancarios, totais gerais ou
+linhas auxiliares de lote/rastreabilidade.
+Quando a invoice trouxer uma linha principal do item com Quantity, Net weight, Price e Amount, seguida de linhas de
+detalhe por Lotcode, batch, lote, Prod. date, Production date, Exp. date, Expiration date, Country of origin ou datas,
+crie apenas um item para a linha principal totalizada. Nao crie itens separados para cada lote.
+Se o mesmo Item number aparecer repetido em linhas de lote, use essas linhas apenas como informacao auxiliar e ignore
+na lista items. Exemplo: item 462.001 com quantidade total 2.520, seguido dos lotes L3045010 quantidade 1.440 e
+L3046010 quantidade 1.080, deve retornar um unico item 462.001 com quantidade 2.520, peso/valor/preco da linha total.
+Somente divida em itens separados quando existirem linhas comerciais distintas, com item/descricao/preco/valor proprios.
 """.strip()
 
 
