@@ -78,6 +78,10 @@ Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraid
 com numero da invoice, shipment, tracking, entrega ou ordem interna do fornecedor.
 Itens devem representar somente as linhas comerciais totalizadas da invoice, nao dados bancarios, totais gerais ou
 linhas auxiliares de lote/rastreabilidade.
+Nao calcule valores que nao estejam explicitamente escritos na invoice. Em especial, items[].valores.valor_unitario
+deve receber o valor literal da coluna Price, Unit price, Unit value ou equivalente quando existir. Nao substitua por
+Amount / Quantity e nao recalcure preco por unidade comercial. Se o Price da invoice aparentar ser por peso liquido
+ou outra base, ainda assim retorne o valor literal encontrado na coluna de preco.
 Quando a invoice trouxer uma linha principal do item com Quantity, Net weight, Price e Amount, seguida de linhas de
 detalhe por Lotcode, batch, lote, Prod. date, Production date, Exp. date, Expiration date, Country of origin ou datas,
 crie apenas um item para a linha principal totalizada. Nao crie itens separados para cada lote.
