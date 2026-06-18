@@ -70,8 +70,8 @@ Para empresas brasileiras, procure CNPJ em formatos como 00.000.000/0000-00, 000
 VAT, Federal Tax ID ou inscricao federal. O CNPJ do importador costuma aparecer no bloco Invoice address, Consignee,
 Buyer, Importer, Customer, Delivery address ou Bill to. Quando encontrar esse documento no bloco do importador,
 grave o valor exatamente como aparece em invoice.importador.documento_extraido. Nao confunda com Tax ID, VAT ou
-documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido; CEP brasileiro tem 8
-digitos, enquanto CNPJ tem 14 digitos e CPF tem 11 digitos.
+documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido. O CNPJ deve ter 14
+digitos e digitos verificadores validos; se houver duvida, retorne null em vez de copiar CEP ou telefone.
 Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
 Customer Reference, Customer PO, PO Number, Purchase Order, Order No ou rotulo equivalente.
 Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
@@ -407,18 +407,20 @@ def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str
         re.IGNORECASE,
     ):
         block = normalized_text[match.start() : match.start() + 700]
-        cnpj_match = cnpj_pattern.search(block)
-        if cnpj_match:
-            candidates.append((match.start(), cnpj_match.group(0)))
+        for cnpj_match in cnpj_pattern.finditer(block):
+            if _is_valid_cnpj(cnpj_match.group(0)):
+                candidates.append((match.start(), cnpj_match.group(0)))
+                break
 
     if isinstance(importer_name, str) and importer_name.strip():
         name_token = re.escape(importer_name.strip()[:60])
         name_match = re.search(name_token, normalized_text, re.IGNORECASE)
         if name_match:
             block = normalized_text[name_match.start() : name_match.start() + 500]
-            cnpj_match = cnpj_pattern.search(block)
-            if cnpj_match:
-                candidates.insert(0, (name_match.start(), cnpj_match.group(0)))
+            for cnpj_match in cnpj_pattern.finditer(block):
+                if _is_valid_cnpj(cnpj_match.group(0)):
+                    candidates.insert(0, (name_match.start(), cnpj_match.group(0)))
+                    break
 
     if candidates:
         return candidates[0][1]
@@ -431,7 +433,48 @@ def _is_brazilian_tax_document(value: Any) -> bool:
         return False
 
     digits = re.sub(r"[^0-9]", "", value)
-    return len(digits) in (11, 14)
+    if len(digits) == 14:
+        return _is_valid_cnpj(digits)
+    if len(digits) == 11:
+        return _is_valid_cpf(digits)
+    return False
+
+
+def _is_valid_cnpj(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    digits = re.sub(r"[^0-9]", "", value)
+    if len(digits) != 14 or digits == digits[0] * 14:
+        return False
+
+    def check_digit(prefix: str, weights: list[int]) -> str:
+        total = sum(int(digit) * weight for digit, weight in zip(prefix, weights))
+        remainder = total % 11
+        return "0" if remainder < 2 else str(11 - remainder)
+
+    first = check_digit(digits[:12], [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+    second = check_digit(digits[:12] + first, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+    return digits[-2:] == first + second
+
+
+def _is_valid_cpf(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    digits = re.sub(r"[^0-9]", "", value)
+    if len(digits) != 11 or digits == digits[0] * 11:
+        return False
+
+    first_total = sum(int(digits[i]) * (10 - i) for i in range(9))
+    first_remainder = (first_total * 10) % 11
+    first = 0 if first_remainder == 10 else first_remainder
+
+    second_total = sum(int(digits[i]) * (11 - i) for i in range(10))
+    second_remainder = (second_total * 10) % 11
+    second = 0 if second_remainder == 10 else second_remainder
+
+    return digits[-2:] == f"{first}{second}"
 
 
 def _get_path(payload: dict[str, Any], path: str) -> Any:
