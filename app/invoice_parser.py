@@ -177,7 +177,7 @@ def parse_invoice_text(
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
     _normalize_customer_order_reference(parsed)
-    _fill_importer_document_from_text(parsed, text)
+    _sanitize_importer_document(parsed, text)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -302,6 +302,7 @@ def parse_invoice_pdf_file(
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
     _normalize_customer_order_reference(parsed)
+    _sanitize_importer_document(parsed, None)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -373,10 +374,7 @@ def _normalize_customer_order_reference(payload: dict[str, Any]) -> None:
     order["numero_pedido_importacao_extraido"] = cleaned or None
 
 
-def _fill_importer_document_from_text(payload: dict[str, Any], text: str | None) -> None:
-    if not text:
-        return
-
+def _sanitize_importer_document(payload: dict[str, Any], text: str | None) -> None:
     invoice = payload.get("invoice")
     if not isinstance(invoice, dict):
         return
@@ -389,10 +387,14 @@ def _fill_importer_document_from_text(payload: dict[str, Any], text: str | None)
     if _is_brazilian_tax_document(current_document):
         return
 
-    document = _find_brazilian_document_near_importer(text, importer.get("nome_extraido"))
+    document = _find_brazilian_document_near_importer(text, importer.get("nome_extraido")) if text else None
     if document:
         importer["documento_extraido"] = document
     elif isinstance(current_document, str) and current_document.strip():
+        logger.info(
+            "stage=importer_document_discarded invalid_document=%s",
+            current_document,
+        )
         importer["documento_extraido"] = None
 
 
