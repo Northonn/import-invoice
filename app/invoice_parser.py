@@ -70,7 +70,8 @@ Para empresas brasileiras, procure CNPJ em formatos como 00.000.000/0000-00, 000
 VAT, Federal Tax ID ou inscricao federal. O CNPJ do importador costuma aparecer no bloco Invoice address, Consignee,
 Buyer, Importer, Customer, Delivery address ou Bill to. Quando encontrar esse documento no bloco do importador,
 grave o valor exatamente como aparece em invoice.importador.documento_extraido. Nao confunda com Tax ID, VAT ou
-documento do exportador/fornecedor.
+documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido; CEP brasileiro tem 8
+digitos, enquanto CNPJ tem 14 digitos e CPF tem 11 digitos.
 Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
 Customer Reference, Customer PO, PO Number, Purchase Order, Order No ou rotulo equivalente.
 Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
@@ -385,12 +386,14 @@ def _fill_importer_document_from_text(payload: dict[str, Any], text: str | None)
         return
 
     current_document = importer.get("documento_extraido")
-    if isinstance(current_document, str) and current_document.strip():
+    if _is_brazilian_tax_document(current_document):
         return
 
     document = _find_brazilian_document_near_importer(text, importer.get("nome_extraido"))
     if document:
         importer["documento_extraido"] = document
+    elif isinstance(current_document, str) and current_document.strip():
+        importer["documento_extraido"] = None
 
 
 def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str | None:
@@ -421,6 +424,14 @@ def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str
         return candidates[0][1]
 
     return None
+
+
+def _is_brazilian_tax_document(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    digits = re.sub(r"[^0-9]", "", value)
+    return len(digits) in (11, 14)
 
 
 def _get_path(payload: dict[str, Any], path: str) -> Any:
