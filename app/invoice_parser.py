@@ -65,6 +65,12 @@ Numeros devem ser retornados como number, sem simbolo de moeda e sem separador d
 Use ponto como separador decimal.
 Moedas devem usar codigo ISO quando aparecer, por exemplo USD, EUR, BRL.
 Incoterms devem usar codigo curto quando aparecer, por exemplo EXW, FOB, CIF.
+Para exportador, importador e adquirente, preencha documento_extraido quando houver documento fiscal/tributario no PDF.
+Para empresas brasileiras, procure CNPJ em formatos como 00.000.000/0000-00, 00000000000000, Tax ID, CNPJ, CPF/CNPJ,
+VAT, Federal Tax ID ou inscricao federal. O CNPJ do importador costuma aparecer no bloco Invoice address, Consignee,
+Buyer, Importer, Customer, Delivery address ou Bill to. Quando encontrar esse documento no bloco do importador,
+grave o valor exatamente como aparece em invoice.importador.documento_extraido. Nao confunda com Tax ID, VAT ou
+documento do exportador/fornecedor.
 Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
 Customer Reference, Customer PO, PO Number, Purchase Order, Order No ou rotulo equivalente.
 Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
@@ -170,6 +176,7 @@ def parse_invoice_text(
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
     _normalize_customer_order_reference(parsed)
+    _fill_importer_document_from_text(parsed, text)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -363,6 +370,57 @@ def _normalize_customer_order_reference(payload: dict[str, Any]) -> None:
     )
     cleaned = prefix_pattern.sub("", value.strip()).strip(" \t\r\n:;#.,/\\-")
     order["numero_pedido_importacao_extraido"] = cleaned or None
+
+
+def _fill_importer_document_from_text(payload: dict[str, Any], text: str | None) -> None:
+    if not text:
+        return
+
+    invoice = payload.get("invoice")
+    if not isinstance(invoice, dict):
+        return
+
+    importer = invoice.get("importador")
+    if not isinstance(importer, dict):
+        return
+
+    current_document = importer.get("documento_extraido")
+    if isinstance(current_document, str) and current_document.strip():
+        return
+
+    document = _find_brazilian_document_near_importer(text, importer.get("nome_extraido"))
+    if document:
+        importer["documento_extraido"] = document
+
+
+def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str | None:
+    cnpj_pattern = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
+    normalized_text = text.replace("\r", "\n")
+    candidates: list[tuple[int, str]] = []
+
+    for match in re.finditer(
+        r"(invoice\s+address|delivery\s+address|consignee|buyer|importer|customer|bill\s+to)",
+        normalized_text,
+        re.IGNORECASE,
+    ):
+        block = normalized_text[match.start() : match.start() + 700]
+        cnpj_match = cnpj_pattern.search(block)
+        if cnpj_match:
+            candidates.append((match.start(), cnpj_match.group(0)))
+
+    if isinstance(importer_name, str) and importer_name.strip():
+        name_token = re.escape(importer_name.strip()[:60])
+        name_match = re.search(name_token, normalized_text, re.IGNORECASE)
+        if name_match:
+            block = normalized_text[name_match.start() : name_match.start() + 500]
+            cnpj_match = cnpj_pattern.search(block)
+            if cnpj_match:
+                candidates.insert(0, (name_match.start(), cnpj_match.group(0)))
+
+    if candidates:
+        return candidates[0][1]
+
+    return None
 
 
 def _get_path(payload: dict[str, Any], path: str) -> Any:
