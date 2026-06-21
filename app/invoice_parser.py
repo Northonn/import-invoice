@@ -65,6 +65,12 @@ Numeros devem ser retornados como number, sem simbolo de moeda e sem separador d
 Use ponto como separador decimal.
 Moedas devem usar codigo ISO quando aparecer, por exemplo USD, EUR, BRL.
 Incoterms devem usar codigo curto quando aparecer, por exemplo EXW, FOB, CIF.
+Preencha invoice.num_invoice com o numero identificador da invoice. Ele pode aparecer como Invoice No, Invoice number,
+Commercial Invoice No, Proforma Invoice, Proforma invoice no., PI No. ou rotulo equivalente. Quando o documento for
+uma commercial invoice e o unico identificador de invoice estiver no campo Proforma Invoice, use esse valor como
+invoice.num_invoice. Exemplo: "Proforma Invoice: 2025dafu-279" deve retornar num_invoice = "2025dafu-279".
+Nao confunda numero da invoice com pedido de compra, PO, pedido de importacao, codigo do cliente, item, container,
+shipment ou totalizador.
 Para exportador, importador e adquirente, preencha documento_extraido quando houver documento fiscal/tributario no PDF.
 Para empresas brasileiras, procure CNPJ em formatos como 00.000.000/0000-00, 00000000000000, Tax ID, CNPJ, CPF/CNPJ,
 VAT, Federal Tax ID ou inscricao federal. O CNPJ do importador costuma aparecer no bloco Invoice address, Consignee,
@@ -182,6 +188,7 @@ def parse_invoice_text(
         logger.exception("request_id=%s stage=openai_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
+    _normalize_invoice_number(parsed, text)
     _normalize_customer_order_reference(parsed, text)
     _sanitize_importer_document(parsed, text)
     parsed["schema_version"] = "1.0"
@@ -307,6 +314,7 @@ def parse_invoice_pdf_file(
         logger.exception("request_id=%s stage=openai_pdf_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
+    _normalize_invoice_number(parsed, None)
     _normalize_customer_order_reference(parsed, None)
     _sanitize_importer_document(parsed, None)
     parsed["schema_version"] = "1.0"
@@ -353,6 +361,28 @@ def find_pending_required_fields(payload: dict[str, Any]) -> list[str]:
                 pending.append(field.replace("items[]", f"items[{index}]"))
 
     return pending
+
+
+def _normalize_invoice_number(payload: dict[str, Any], text: str | None) -> None:
+    invoice = payload.get("invoice")
+    if not isinstance(invoice, dict):
+        return
+
+    current_number = invoice.get("num_invoice")
+    if isinstance(current_number, str) and current_number.strip():
+        invoice["num_invoice"] = current_number.strip()
+        return
+
+    if not text:
+        return
+
+    match = re.search(
+        r"\b(?:proforma\s+invoice|proforma\s+invoice\s+no\.?|pi\s+no\.?)\s*[:#-]?\s*([A-Z0-9][\w.\-/]*)",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        invoice["num_invoice"] = match.group(1).strip(" \t\r\n:;#.,")
 
 
 def _normalize_customer_order_reference(payload: dict[str, Any], text: str | None) -> None:
