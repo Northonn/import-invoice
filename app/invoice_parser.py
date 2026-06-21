@@ -85,7 +85,9 @@ Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraid
 com numero da invoice, shipment, tracking, entrega, ordem interna do fornecedor ou endereco do importador. Nunca use
 endereco como pedido de importacao: ignore linhas com rua, rodovia, avenida, domicilio, address, street, road, cidade,
 CEP/postal code ou bairro. Exemplo: "ROD ING HERING N° 18370 BELCHIOR CENTRAL" e endereco, nao pedido. Em invoices
-argentinas, referencias como "CRT: AR.522.204.210" podem ser o codigo do pedido/referencia comercial.
+argentinas, referencias como "CRT: AR.522.204.210" podem ser o codigo do pedido/referencia comercial. Nao use Cod.
+Cliente, Cod Cliente, Codigo Cliente, Customer Code ou Client Code como pedido; isso normalmente e codigo interno do
+cliente no fornecedor.
 Itens devem representar somente as linhas comerciais totalizadas da invoice, nao dados bancarios, totais gerais ou
 linhas auxiliares de lote/rastreabilidade.
 Nao calcule valores que nao estejam explicitamente escritos na invoice. Em especial, items[].valores.valor_unitario
@@ -375,7 +377,7 @@ def _normalize_customer_order_reference(payload: dict[str, Any], text: str | Non
     )
     cleaned = prefix_pattern.sub("", value.strip()).strip(" \t\r\n:;#.,/\\-")
 
-    if _looks_like_address(cleaned) or _looks_like_address(original):
+    if _looks_like_address(cleaned) or _looks_like_address(original) or _looks_like_supplier_customer_code(original):
         crt_reference = _find_crt_reference(text) if text else None
         if crt_reference:
             order["referencia_original_extraida"] = crt_reference["original"]
@@ -401,6 +403,19 @@ def _looks_like_address(value: Any) -> bool:
         re.IGNORECASE,
     )
     return bool(address_pattern.search(upper))
+
+
+def _looks_like_supplier_customer_code(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    return bool(
+        re.search(
+            r"\b(C[OÓ]D(?:IGO)?\.?\s*(?:DO\s+)?CLIENTE|CUSTOMER\s+CODE|CLIENT\s+CODE|COD\.?\s*CLIENTE)\b",
+            value,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _find_crt_reference(text: str | None) -> dict[str, str] | None:
