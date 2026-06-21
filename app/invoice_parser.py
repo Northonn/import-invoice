@@ -74,7 +74,7 @@ shipment ou totalizador.
 Para exportador, importador e adquirente, preencha documento_extraido quando houver documento fiscal/tributario no PDF.
 Para empresas brasileiras, procure CNPJ em formatos como 00.000.000/0000-00, 00000000000000, Tax ID, CNPJ, CPF/CNPJ,
 VAT, Federal Tax ID ou inscricao federal. O CNPJ do importador costuma aparecer no bloco Invoice address, Consignee,
-Buyer, Importer, Customer, Delivery address ou Bill to. Quando encontrar esse documento no bloco do importador,
+Buyer, Importer, Customer, Delivery address, Sold To, Ship To ou Bill to. Quando encontrar esse documento no bloco do importador,
 grave o valor exatamente como aparece em invoice.importador.documento_extraido. Nao confunda com Tax ID, VAT ou
 documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido. O CNPJ deve ter 14
 digitos e digitos verificadores validos; se houver duvida, retorne null em vez de copiar CEP ou telefone.
@@ -499,7 +499,7 @@ def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str
     candidates: list[tuple[int, str]] = []
 
     for match in re.finditer(
-        r"(invoice\s+address|delivery\s+address|consignee|buyer|importer|customer|bill\s+to)",
+        r"(invoice\s+address|delivery\s+address|consignee|buyer|importer|customer|sold\s+to|ship\s+to|bill\s+to)",
         normalized_text,
         re.IGNORECASE,
     ):
