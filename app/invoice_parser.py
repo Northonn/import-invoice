@@ -85,9 +85,10 @@ Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraid
 com numero da invoice, shipment, tracking, entrega, ordem interna do fornecedor ou endereco do importador. Nunca use
 endereco como pedido de importacao: ignore linhas com rua, rodovia, avenida, domicilio, address, street, road, cidade,
 CEP/postal code ou bairro. Exemplo: "ROD ING HERING N° 18370 BELCHIOR CENTRAL" e endereco, nao pedido. Em invoices
-argentinas, referencias como "CRT: AR.522.204.210" podem ser o codigo do pedido/referencia comercial. Nao use Cod.
-Cliente, Cod Cliente, Codigo Cliente, Customer Code ou Client Code como pedido; isso normalmente e codigo interno do
-cliente no fornecedor.
+argentinas, referencias como "CRT: AR.522.204.210" podem ser o codigo do pedido/referencia comercial. Quando houver
+Cod. Cliente e CRT na mesma invoice, prefira CRT como referencia do pedido. Nao use Cod. Cliente, Cod Cliente,
+Codigo Cliente, Customer Code ou Client Code como pedido, mesmo se o numero parecer valido; isso normalmente e codigo
+interno do cliente no fornecedor.
 Itens devem representar somente as linhas comerciais totalizadas da invoice, nao dados bancarios, totais gerais ou
 linhas auxiliares de lote/rastreabilidade.
 Nao calcule valores que nao estejam explicitamente escritos na invoice. Em especial, items[].valores.valor_unitario
@@ -369,6 +370,7 @@ def _normalize_customer_order_reference(payload: dict[str, Any], text: str | Non
         return
 
     order["referencia_original_extraida"] = original.strip()
+    label = order.get("rotulo_referencia_extraido")
     value = normalized if isinstance(normalized, str) and normalized.strip() else original
     prefix_pattern = re.compile(
         r"^(?:(?:customer\s+)?(?:purchase\s+order|p\s*[./]\s*o|p\.\s*o\.|po|order|"
@@ -377,16 +379,22 @@ def _normalize_customer_order_reference(payload: dict[str, Any], text: str | Non
     )
     cleaned = prefix_pattern.sub("", value.strip()).strip(" \t\r\n:;#.,/\\-")
 
-    if _looks_like_address(cleaned) or _looks_like_address(original) or _looks_like_supplier_customer_code(original):
+    is_supplier_customer_code = (
+        _looks_like_supplier_customer_code(original)
+        or _looks_like_supplier_customer_code(cleaned)
+        or _looks_like_supplier_customer_code(label)
+    )
+
+    if _looks_like_address(cleaned) or _looks_like_address(original) or is_supplier_customer_code:
         crt_reference = _find_crt_reference(text) if text else None
         if crt_reference:
             order["referencia_original_extraida"] = crt_reference["original"]
             order["numero_pedido_importacao_extraido"] = crt_reference["number"]
             order["rotulo_referencia_extraido"] = crt_reference["label"]
         else:
+            order["referencia_original_extraida"] = None
             order["numero_pedido_importacao_extraido"] = None
-            if not order.get("rotulo_referencia_extraido"):
-                order["rotulo_referencia_extraido"] = None
+            order["rotulo_referencia_extraido"] = None
         return
 
     order["numero_pedido_importacao_extraido"] = cleaned or None
