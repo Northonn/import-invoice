@@ -33,7 +33,7 @@ ALLOWED_OPENAI_MODELS = {
 
 app = FastAPI(
     title="PDF Invoice API",
-    version="0.1.0",
+    version=settings.api_version,
     description="Extrai texto de invoices em PDF usando Apache PDFBox.",
 )
 
@@ -136,6 +136,7 @@ async def write_upload_to_file(upload: UploadFile, destination: Path, request_id
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
+        "api_version": settings.api_version,
         "pdfbox_jar_configured": bool(settings.pdfbox_jar),
         "pdfbox_jar_exists": Path(settings.pdfbox_jar).exists(),
         "openai_configured": bool(settings.openai_api_key),

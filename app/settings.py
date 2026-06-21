@@ -11,6 +11,7 @@ def _int_env(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class Settings:
+    api_version: str = os.getenv("API_VERSION", "2026.06.21.5")
     pdfbox_jar: str = os.getenv("PDFBOX_JAR", "/opt/pdfbox/pdfbox-app.jar")
     java_bin: str = os.getenv("JAVA_BIN", "java")
     api_key: str | None = os.getenv("API_KEY")

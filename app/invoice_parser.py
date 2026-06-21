@@ -197,6 +197,7 @@ def parse_invoice_text(
         "filename": filename,
         "extracted_text": text if include_extracted_text else None,
         "extracted_at": datetime.now(UTC).isoformat(),
+        "api_version": settings.api_version,
     }
     parsed["context"] = context
     parsed["required_for_insert"] = REQUIRED_FOR_INSERT
@@ -210,6 +211,7 @@ def parse_invoice_text(
     )
 
     return {
+        "api_version": settings.api_version,
         "model": selected_model,
         "usage": usage,
         "text_length": len(text),
@@ -323,6 +325,7 @@ def parse_invoice_pdf_file(
         "filename": filename,
         "extracted_text": None,
         "extracted_at": datetime.now(UTC).isoformat(),
+        "api_version": settings.api_version,
     }
     parsed["context"] = context
     parsed["required_for_insert"] = REQUIRED_FOR_INSERT
@@ -336,6 +339,7 @@ def parse_invoice_pdf_file(
     )
 
     return {
+        "api_version": settings.api_version,
         "model": selected_model,
         "usage": usage,
         "invoice_import": parsed,
