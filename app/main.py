@@ -97,6 +97,15 @@ def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions, request_id: s
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def extract_auxiliary_text_for_pdf_parse(pdf_path: Path, request_id: str) -> TextExtractionResult | None:
+    options = ExtractOptions(enable_ocr=False)
+    try:
+        return extract_text_from_pdf(pdf_path, options, request_id)
+    except PDFBoxError as exc:
+        logger.warning("request_id=%s stage=auxiliary_text_unavailable error=%s", request_id, exc)
+        return None
+
+
 async def write_request_stream_to_file(request: Request, destination: Path, request_id: str) -> int:
     total = 0
     logger.info("request_id=%s stage=raw_upload_start", request_id)
@@ -259,12 +268,14 @@ async def parse_invoice_pdf_openai_multipart(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_upload_to_file(file, pdf_path, request_id)
+        auxiliary_extraction = extract_auxiliary_text_for_pdf_parse(pdf_path, request_id)
         parsed = parse_pdf_file_to_invoice_import(
             pdf_path=pdf_path,
             filename=file.filename,
             context=context,
             openai_model=openai_model,
             request_id=request_id,
+            fallback_text=auxiliary_extraction.text if auxiliary_extraction else None,
         )
 
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
@@ -273,6 +284,8 @@ async def parse_invoice_pdf_openai_multipart(
         "filename": file.filename,
         "bytes": byte_count,
         "extraction_method": "openai_pdf_vision",
+        "auxiliary_text_method": auxiliary_extraction.method if auxiliary_extraction else None,
+        "auxiliary_text_length": len(auxiliary_extraction.text) if auxiliary_extraction else 0,
         **parsed,
     }
 
@@ -371,12 +384,14 @@ async def parse_invoice_pdf_openai_raw(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_request_stream_to_file(request, pdf_path, request_id)
+        auxiliary_extraction = extract_auxiliary_text_for_pdf_parse(pdf_path, request_id)
         parsed = parse_pdf_file_to_invoice_import(
             pdf_path=pdf_path,
             filename=filename,
             context=context,
             openai_model=openai_model,
             request_id=request_id,
+            fallback_text=auxiliary_extraction.text if auxiliary_extraction else None,
         )
 
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_done elapsed_ms=%s", request_id, _elapsed_ms(started_at))
@@ -385,6 +400,8 @@ async def parse_invoice_pdf_openai_raw(
         "filename": filename,
         "bytes": byte_count,
         "extraction_method": "openai_pdf_vision",
+        "auxiliary_text_method": auxiliary_extraction.method if auxiliary_extraction else None,
+        "auxiliary_text_length": len(auxiliary_extraction.text) if auxiliary_extraction else 0,
         **parsed,
     }
 
@@ -400,6 +417,7 @@ def parse_pdf_file_to_invoice_import(
     context: dict[str, int | bool | None],
     openai_model: str | None,
     request_id: str,
+    fallback_text: str | None,
 ) -> dict:
     try:
         return parse_invoice_pdf_file(
@@ -408,6 +426,7 @@ def parse_pdf_file_to_invoice_import(
             id_tenant=context["id_tenant"],  # type: ignore[arg-type]
             id_usuario_incluiu=context["id_usuario_incluiu"],  # type: ignore[arg-type]
             id_processoimportacao=context["id_processoimportacao"],  # type: ignore[arg-type]
+            fallback_text=fallback_text,
             openai_model=openai_model,
             request_id=request_id,
         )

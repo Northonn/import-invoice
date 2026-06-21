@@ -227,6 +227,7 @@ def parse_invoice_pdf_file(
     id_tenant: int | None,
     id_usuario_incluiu: int | None,
     id_processoimportacao: int | None,
+    fallback_text: str | None = None,
     openai_model: str | None,
     request_id: str,
 ) -> dict[str, Any]:
@@ -262,6 +263,7 @@ def parse_invoice_pdf_file(
         "filename": filename,
         "context": context,
         "task": "Analise este PDF de invoice, incluindo paginas escaneadas/imagens, e retorne o JSON estruturado.",
+        "auxiliary_extracted_text": fallback_text,
     }
 
     try:
@@ -316,9 +318,9 @@ def parse_invoice_pdf_file(
         logger.exception("request_id=%s stage=openai_pdf_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
-    _normalize_invoice_number(parsed, None)
-    _normalize_customer_order_reference(parsed, None)
-    _sanitize_importer_document(parsed, None)
+    _normalize_invoice_number(parsed, fallback_text)
+    _normalize_customer_order_reference(parsed, fallback_text)
+    _sanitize_importer_document(parsed, fallback_text)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
