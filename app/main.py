@@ -97,8 +97,13 @@ def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions, request_id: s
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-def extract_auxiliary_text_for_pdf_parse(pdf_path: Path, request_id: str) -> TextExtractionResult | None:
-    options = ExtractOptions(enable_ocr=True)
+def extract_auxiliary_text_for_pdf_parse(
+    pdf_path: Path,
+    request_id: str,
+    *,
+    enable_ocr: bool,
+) -> TextExtractionResult | None:
+    options = ExtractOptions(enable_ocr=enable_ocr)
     try:
         return extract_text_from_pdf(pdf_path, options, request_id)
     except PDFBoxError as exc:
@@ -258,6 +263,7 @@ async def parse_invoice_pdf_openai_multipart(
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
     openai_model: str | None = Depends(build_openai_model),
+    auxiliary_ocr: bool = Query(default=False),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_start filename=%s", request_id, file.filename)
@@ -268,7 +274,11 @@ async def parse_invoice_pdf_openai_multipart(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_upload_to_file(file, pdf_path, request_id)
-        auxiliary_extraction = extract_auxiliary_text_for_pdf_parse(pdf_path, request_id)
+        auxiliary_extraction = extract_auxiliary_text_for_pdf_parse(
+            pdf_path,
+            request_id,
+            enable_ocr=auxiliary_ocr,
+        )
         parsed = parse_pdf_file_to_invoice_import(
             pdf_path=pdf_path,
             filename=file.filename,
@@ -284,6 +294,7 @@ async def parse_invoice_pdf_openai_multipart(
         "filename": file.filename,
         "bytes": byte_count,
         "extraction_method": "openai_pdf_vision",
+        "auxiliary_ocr_enabled": auxiliary_ocr,
         "auxiliary_text_method": auxiliary_extraction.method if auxiliary_extraction else None,
         "auxiliary_text_length": len(auxiliary_extraction.text) if auxiliary_extraction else 0,
         **parsed,
@@ -373,6 +384,7 @@ async def parse_invoice_pdf_openai_raw(
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
     openai_model: str | None = Depends(build_openai_model),
+    auxiliary_ocr: bool = Query(default=False),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_start filename=%s", request_id, filename)
@@ -384,7 +396,11 @@ async def parse_invoice_pdf_openai_raw(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         pdf_path = Path(tmp.name)
         byte_count = await write_request_stream_to_file(request, pdf_path, request_id)
-        auxiliary_extraction = extract_auxiliary_text_for_pdf_parse(pdf_path, request_id)
+        auxiliary_extraction = extract_auxiliary_text_for_pdf_parse(
+            pdf_path,
+            request_id,
+            enable_ocr=auxiliary_ocr,
+        )
         parsed = parse_pdf_file_to_invoice_import(
             pdf_path=pdf_path,
             filename=filename,
@@ -400,6 +416,7 @@ async def parse_invoice_pdf_openai_raw(
         "filename": filename,
         "bytes": byte_count,
         "extraction_method": "openai_pdf_vision",
+        "auxiliary_ocr_enabled": auxiliary_ocr,
         "auxiliary_text_method": auxiliary_extraction.method if auxiliary_extraction else None,
         "auxiliary_text_length": len(auxiliary_extraction.text) if auxiliary_extraction else 0,
         **parsed,

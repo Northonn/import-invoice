@@ -78,6 +78,9 @@ Buyer, Importer, Customer, Delivery address, Sold To, Ship To ou Bill to. Quando
 grave o valor exatamente como aparece em invoice.importador.documento_extraido. Nao confunda com Tax ID, VAT ou
 documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido. O CNPJ deve ter 14
 digitos e digitos verificadores validos; se houver duvida, retorne null em vez de copiar CEP ou telefone.
+Em invoices com layout visual, leia com atencao o bloco "Sold To": se houver uma linha literal "CNPJ 33.055.732/0004-80"
+ou similar abaixo do nome/endereco do comprador/importador, esse e o documento_extraido do importador. Priorize esse CNPJ
+mesmo que o texto auxiliar esteja ausente.
 Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
 Customer Reference, Customer PO, PO Number, Purchase Order, Order No, CRT, Contract, Contrato ou rotulo equivalente.
 Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
