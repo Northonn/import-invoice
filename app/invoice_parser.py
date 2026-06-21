@@ -73,7 +73,7 @@ grave o valor exatamente como aparece em invoice.importador.documento_extraido. 
 documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido. O CNPJ deve ter 14
 digitos e digitos verificadores validos; se houver duvida, retorne null em vez de copiar CEP ou telefone.
 Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
-Customer Reference, Customer PO, PO Number, Purchase Order, Order No ou rotulo equivalente.
+Customer Reference, Customer PO, PO Number, Purchase Order, Order No, CRT, Contract, Contrato ou rotulo equivalente.
 Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
 Em invoice.pedido_importacao.numero_pedido_importacao_extraido, retorne apenas o identificador limpo do pedido.
 Remova do inicio termos de rotulo como PO, P.O., P/O, PO.:, Purchase Order, Order, Doc., Document, Documento,
@@ -82,7 +82,10 @@ usados somente como separadores. Nao remova letras, numeros, hifens ou barras qu
 Exemplos: "PO.: 4500587997" vira "4500587997"; "Customer Ref: P/O 12345-A" vira "12345-A";
 "PO12345" permanece "PO12345", pois PO faz parte do identificador sem separador.
 Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraido. Nao confunda essa referencia
-com numero da invoice, shipment, tracking, entrega ou ordem interna do fornecedor.
+com numero da invoice, shipment, tracking, entrega, ordem interna do fornecedor ou endereco do importador. Nunca use
+endereco como pedido de importacao: ignore linhas com rua, rodovia, avenida, domicilio, address, street, road, cidade,
+CEP/postal code ou bairro. Exemplo: "ROD ING HERING N° 18370 BELCHIOR CENTRAL" e endereco, nao pedido. Em invoices
+argentinas, referencias como "CRT: AR.522.204.210" podem ser o codigo do pedido/referencia comercial.
 Itens devem representar somente as linhas comerciais totalizadas da invoice, nao dados bancarios, totais gerais ou
 linhas auxiliares de lote/rastreabilidade.
 Nao calcule valores que nao estejam explicitamente escritos na invoice. Em especial, items[].valores.valor_unitario
@@ -176,7 +179,7 @@ def parse_invoice_text(
         logger.exception("request_id=%s stage=openai_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
-    _normalize_customer_order_reference(parsed)
+    _normalize_customer_order_reference(parsed, text)
     _sanitize_importer_document(parsed, text)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
@@ -301,7 +304,7 @@ def parse_invoice_pdf_file(
         logger.exception("request_id=%s stage=openai_pdf_json_error", request_id)
         raise InvoiceParseError("OpenAI retornou uma resposta que nao foi possivel ler como JSON.") from exc
 
-    _normalize_customer_order_reference(parsed)
+    _normalize_customer_order_reference(parsed, None)
     _sanitize_importer_document(parsed, None)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
@@ -349,7 +352,7 @@ def find_pending_required_fields(payload: dict[str, Any]) -> list[str]:
     return pending
 
 
-def _normalize_customer_order_reference(payload: dict[str, Any]) -> None:
+def _normalize_customer_order_reference(payload: dict[str, Any], text: str | None) -> None:
     invoice = payload.get("invoice")
     if not isinstance(invoice, dict):
         return
@@ -371,7 +374,46 @@ def _normalize_customer_order_reference(payload: dict[str, Any]) -> None:
         re.IGNORECASE,
     )
     cleaned = prefix_pattern.sub("", value.strip()).strip(" \t\r\n:;#.,/\\-")
+
+    if _looks_like_address(cleaned) or _looks_like_address(original):
+        crt_reference = _find_crt_reference(text) if text else None
+        if crt_reference:
+            order["referencia_original_extraida"] = crt_reference["original"]
+            order["numero_pedido_importacao_extraido"] = crt_reference["number"]
+            order["rotulo_referencia_extraido"] = crt_reference["label"]
+        else:
+            order["numero_pedido_importacao_extraido"] = None
+            if not order.get("rotulo_referencia_extraido"):
+                order["rotulo_referencia_extraido"] = None
+        return
+
     order["numero_pedido_importacao_extraido"] = cleaned or None
+
+
+def _looks_like_address(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    upper = value.upper()
+    address_pattern = re.compile(
+        r"\b(ROD|ROD\.|RODOVIA|RUA|AV|AV\.|AVENIDA|DOMICILIO|DOMICÍLIO|ADDRESS|STREET|ROAD|"
+        r"BAIRRO|CENTRAL|CEP|POSTAL|BELCHIOR|GASPAR|SC|BRASIL|BRAZIL|N[°ºO]\s*\d+)\b",
+        re.IGNORECASE,
+    )
+    return bool(address_pattern.search(upper))
+
+
+def _find_crt_reference(text: str | None) -> dict[str, str] | None:
+    if not text:
+        return None
+
+    match = re.search(r"\b(CRT)\s*[:#-]?\s*([A-Z]{1,4}[.\-/]?\d[\w.\-/]*)", text, re.IGNORECASE)
+    if not match:
+        return None
+
+    label = match.group(1).upper()
+    number = match.group(2).strip(" \t\r\n:;#.,")
+    return {"label": label, "number": number, "original": f"{label}: {number}"}
 
 
 def _sanitize_importer_document(payload: dict[str, Any], text: str | None) -> None:
