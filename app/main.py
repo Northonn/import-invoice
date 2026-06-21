@@ -98,7 +98,7 @@ def extract_from_temp_pdf(pdf_path: Path, options: ExtractOptions, request_id: s
 
 
 def extract_auxiliary_text_for_pdf_parse(pdf_path: Path, request_id: str) -> TextExtractionResult | None:
-    options = ExtractOptions(enable_ocr=False)
+    options = ExtractOptions(enable_ocr=True)
     try:
         return extract_text_from_pdf(pdf_path, options, request_id)
     except PDFBoxError as exc:
