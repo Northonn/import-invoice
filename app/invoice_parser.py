@@ -139,6 +139,7 @@ def parse_invoice_text(
     _normalize_invoice_number(parsed, text)
     _normalize_customer_order_reference(parsed, text)
     _sanitize_importer_document(parsed, text)
+    _sanitize_party_documents(parsed)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -271,6 +272,7 @@ def parse_invoice_pdf_file(
     _normalize_invoice_number(parsed, fallback_text)
     _normalize_customer_order_reference(parsed, fallback_text)
     _sanitize_importer_document(parsed, fallback_text)
+    _sanitize_party_documents(parsed)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -451,6 +453,31 @@ def _sanitize_importer_document(payload: dict[str, Any], text: str | None) -> No
         importer["documento_extraido"] = None
 
 
+def _sanitize_party_documents(payload: dict[str, Any]) -> None:
+    invoice = payload.get("invoice")
+    if not isinstance(invoice, dict):
+        return
+
+    importer = invoice.get("importador")
+    exporter = invoice.get("exportador")
+    if not isinstance(importer, dict) or not isinstance(exporter, dict):
+        return
+
+    importer_document = importer.get("documento_extraido")
+    exporter_document = exporter.get("documento_extraido")
+    if not _is_brazilian_tax_document(importer_document) or not _is_brazilian_tax_document(exporter_document):
+        return
+
+    if _only_digits(importer_document) != _only_digits(exporter_document):
+        return
+
+    logger.info(
+        "stage=exporter_document_discarded reason=same_as_importer_document document=%s",
+        exporter_document,
+    )
+    exporter["documento_extraido"] = None
+
+
 def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str | None:
     cnpj_pattern = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
     normalized_text = text.replace("\r", "\n")
@@ -487,12 +514,16 @@ def _is_brazilian_tax_document(value: Any) -> bool:
     if not isinstance(value, str):
         return False
 
-    digits = re.sub(r"[^0-9]", "", value)
+    digits = _only_digits(value)
     if len(digits) == 14:
         return _is_valid_cnpj(digits)
     if len(digits) == 11:
         return _is_valid_cpf(digits)
     return False
+
+
+def _only_digits(value: Any) -> str:
+    return re.sub(r"[^0-9]", "", str(value or ""))
 
 
 def _is_valid_cnpj(value: Any) -> bool:
