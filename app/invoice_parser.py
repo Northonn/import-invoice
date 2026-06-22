@@ -9,6 +9,7 @@ from typing import Any
 
 from openai import OpenAI, OpenAIError
 
+from .invoice_prompt import INVOICE_EXTRACTION_PROMPT, INVOICE_EXTRACTION_PROMPT_VERSION
 from .invoice_schema import INVOICE_IMPORT_SCHEMA, REQUIRED_FOR_INSERT
 from .settings import settings
 
@@ -54,64 +55,8 @@ MODEL_PRICES_USD_PER_1M_TOKENS = {
 }
 
 
-SYSTEM_PROMPT = """
-Voce e um extrator de dados de commercial invoices de comercio exterior.
-Retorne JSON conforme o schema informado.
-Extraia apenas informacoes presentes no texto.
-Nao invente IDs internos do sistema. Campos id_* devem permanecer null, exceto quando forem fornecidos no contexto.
-Quando nao encontrar um campo, retorne null.
-Datas devem ficar em YYYY-MM-DD quando a data completa existir; caso contrario, null.
-Numeros devem ser retornados como number, sem simbolo de moeda e sem separador de milhar.
-Use ponto como separador decimal.
-Moedas devem usar codigo ISO quando aparecer, por exemplo USD, EUR, BRL.
-Incoterms devem usar codigo curto quando aparecer, por exemplo EXW, FOB, CIF.
-Preencha invoice.num_invoice com o numero identificador da invoice. Ele pode aparecer como Invoice No, Invoice number,
-Commercial Invoice No, Proforma Invoice, Proforma invoice no., PI No. ou rotulo equivalente. Quando o documento for
-uma commercial invoice e o unico identificador de invoice estiver no campo Proforma Invoice, use esse valor como
-invoice.num_invoice. Exemplo: "Proforma Invoice: 2025dafu-279" deve retornar num_invoice = "2025dafu-279".
-Nao confunda numero da invoice com pedido de compra, PO, pedido de importacao, codigo do cliente, item, container,
-shipment ou totalizador.
-Para exportador, importador e adquirente, preencha documento_extraido quando houver documento fiscal/tributario no PDF.
-Para empresas brasileiras, procure CNPJ em formatos como 00.000.000/0000-00, 00000000000000, Tax ID, CNPJ, CPF/CNPJ,
-VAT, Federal Tax ID ou inscricao federal. O CNPJ do importador costuma aparecer no bloco Invoice address, Consignee,
-Buyer, Importer, Customer, Delivery address, Sold To, Ship To ou Bill to. Quando encontrar esse documento no bloco do importador,
-grave o valor exatamente como aparece em invoice.importador.documento_extraido. Nao confunda com Tax ID, VAT ou
-documento do exportador/fornecedor. Nao use CEP/postal code/endereco como documento_extraido. O CNPJ deve ter 14
-digitos e digitos verificadores validos; se houver duvida, retorne null em vez de copiar CEP ou telefone.
-Em invoices com layout visual, leia com atencao o bloco "Sold To": se houver uma linha literal "CNPJ 33.055.732/0004-80"
-ou similar abaixo do nome/endereco do comprador/importador, esse e o documento_extraido do importador. Priorize esse CNPJ
-mesmo que o texto auxiliar esteja ausente.
-Identifique a ordem de compra ou referencia do cliente que originou a invoice. Ela pode aparecer como Customer Ref,
-Customer Reference, Customer PO, PO Number, Purchase Order, Order No, CRT, Contract, Contrato ou rotulo equivalente.
-Grave o texto encontrado sem alteracao em invoice.pedido_importacao.referencia_original_extraida.
-Em invoice.pedido_importacao.numero_pedido_importacao_extraido, retorne apenas o identificador limpo do pedido.
-Remova do inicio termos de rotulo como PO, P.O., P/O, PO.:, Purchase Order, Order, Doc., Document, Documento,
-Referencia, Ref. e combinacoes como Customer Ref ou Customer PO, alem de dois-pontos, pontos, barras e espacos
-usados somente como separadores. Nao remova letras, numeros, hifens ou barras que pertencam ao identificador.
-Exemplos: "PO.: 4500587997" vira "4500587997"; "Customer Ref: P/O 12345-A" vira "12345-A";
-"PO12345" permanece "PO12345", pois PO faz parte do identificador sem separador.
-Grave o rotulo encontrado em invoice.pedido_importacao.rotulo_referencia_extraido. Nao confunda essa referencia
-com numero da invoice, shipment, tracking, entrega, ordem interna do fornecedor ou endereco do importador. Nunca use
-endereco como pedido de importacao: ignore linhas com rua, rodovia, avenida, domicilio, address, street, road, cidade,
-CEP/postal code ou bairro. Exemplo: "ROD ING HERING N° 18370 BELCHIOR CENTRAL" e endereco, nao pedido. Em invoices
-argentinas, referencias como "CRT: AR.522.204.210" podem ser o codigo do pedido/referencia comercial. Quando houver
-Cod. Cliente e CRT na mesma invoice, prefira CRT como referencia do pedido. Nao use Cod. Cliente, Cod Cliente,
-Codigo Cliente, Customer Code ou Client Code como pedido, mesmo se o numero parecer valido; isso normalmente e codigo
-interno do cliente no fornecedor.
-Itens devem representar somente as linhas comerciais totalizadas da invoice, nao dados bancarios, totais gerais ou
-linhas auxiliares de lote/rastreabilidade.
-Nao calcule valores que nao estejam explicitamente escritos na invoice. Em especial, items[].valores.valor_unitario
-deve receber o valor literal da coluna Price, Unit price, Unit value ou equivalente quando existir. Nao substitua por
-Amount / Quantity e nao recalcure preco por unidade comercial. Se o Price da invoice aparentar ser por peso liquido
-ou outra base, ainda assim retorne o valor literal encontrado na coluna de preco.
-Quando a invoice trouxer uma linha principal do item com Quantity, Net weight, Price e Amount, seguida de linhas de
-detalhe por Lotcode, batch, lote, Prod. date, Production date, Exp. date, Expiration date, Country of origin ou datas,
-crie apenas um item para a linha principal totalizada. Nao crie itens separados para cada lote.
-Se o mesmo Item number aparecer repetido em linhas de lote, use essas linhas apenas como informacao auxiliar e ignore
-na lista items. Exemplo: item 462.001 com quantidade total 2.520, seguido dos lotes L3045010 quantidade 1.440 e
-L3046010 quantidade 1.080, deve retornar um unico item 462.001 com quantidade 2.520, peso/valor/preco da linha total.
-Somente divida em itens separados quando existirem linhas comerciais distintas, com item/descricao/preco/valor proprios.
-""".strip()
+SYSTEM_PROMPT = INVOICE_EXTRACTION_PROMPT
+PROMPT_VERSION = INVOICE_EXTRACTION_PROMPT_VERSION
 
 
 def parse_invoice_text(
@@ -201,6 +146,7 @@ def parse_invoice_text(
         "extracted_text": text if include_extracted_text else None,
         "extracted_at": datetime.now(UTC).isoformat(),
         "api_version": settings.api_version,
+        "prompt_version": PROMPT_VERSION,
     }
     parsed["context"] = context
     parsed["required_for_insert"] = REQUIRED_FOR_INSERT
@@ -215,6 +161,7 @@ def parse_invoice_text(
 
     return {
         "api_version": settings.api_version,
+        "prompt_version": PROMPT_VERSION,
         "model": selected_model,
         "usage": usage,
         "text_length": len(text),
@@ -331,6 +278,7 @@ def parse_invoice_pdf_file(
         "extracted_text": None,
         "extracted_at": datetime.now(UTC).isoformat(),
         "api_version": settings.api_version,
+        "prompt_version": PROMPT_VERSION,
     }
     parsed["context"] = context
     parsed["required_for_insert"] = REQUIRED_FOR_INSERT
@@ -345,6 +293,7 @@ def parse_invoice_pdf_file(
 
     return {
         "api_version": settings.api_version,
+        "prompt_version": PROMPT_VERSION,
         "model": selected_model,
         "usage": usage,
         "invoice_import": parsed,

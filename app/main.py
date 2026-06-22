@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 
+from .invoice_prompt import INVOICE_EXTRACTION_PROMPT_VERSION
 from .invoice_parser import InvoiceParseError, parse_invoice_pdf_file, parse_invoice_text
 from .pdfbox import ExtractOptions, PDFBoxError
 from .settings import settings
@@ -151,6 +152,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "api_version": settings.api_version,
+        "prompt_version": INVOICE_EXTRACTION_PROMPT_VERSION,
         "pdfbox_jar_configured": bool(settings.pdfbox_jar),
         "pdfbox_jar_exists": Path(settings.pdfbox_jar).exists(),
         "openai_configured": bool(settings.openai_api_key),
