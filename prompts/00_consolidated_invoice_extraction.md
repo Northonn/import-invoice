@@ -1,6 +1,3 @@
-INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.24.2"
-
-INVOICE_EXTRACTION_PROMPT = """
 # Prompt Consolidado - Extracao de Invoices de Importacao
 
 Voce e um extrator de dados de commercial invoices de comercio exterior para importacao de mercadorias. Retorne JSON estritamente conforme o schema informado pela API.
@@ -78,10 +75,9 @@ Voce e um extrator de dados de commercial invoices de comercio exterior para imp
 - Frete, seguro, VAT, desconto e embalagem devem preencher campos de valores quando o schema tiver campo correspondente; nao crie itens para eles.
 - Nao calcule valores nao escritos explicitamente.
 
-## 7. Saida
+## 8. Saida
 
 - Retorne somente JSON valido conforme o schema informado.
 - Nao inclua explicacoes fora do JSON.
 - Preserve textos extraidos exatamente quando o campo for `*_extraido`.
 - Se a confianca for baixa em um campo obrigatorio, retorne null e deixe o campo aparecer em `pending_fields` pela API.
-""".strip()
