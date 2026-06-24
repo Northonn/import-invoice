@@ -27,7 +27,7 @@ Voce e um extrator de dados de commercial invoices de comercio exterior para imp
 - Em 99% dos casos, CNPJ encontrado em commercial invoice pertence ao importador, adquirente, comprador, consignatario ou destinatario, e nao ao exportador.
 - Nunca atribua CNPJ brasileiro ao exportador.
 - CNPJ em blocos `Sold To`, `Bill-to`, `Ship-to`, `Consignee`, `Buyer`, `Importer`, `Customer`, `Invoice address` ou `Delivery address` deve ir para `invoice.importador.documento_extraido` ou `invoice.adquirente.documento_extraido`.
-- Se houver duvida sobre a qual pessoa pertence um documento, deixe o documento como null.
+- Se houver duvida sobre a qual pessoa pertence um documento, deixe o documento com o importador.
 - Nao confunda CNPJ com CEP, telefone, conta bancaria, VAT estrangeiro, Tax ID estrangeiro ou numero de registro do exportador.
 
 ## 3. Numero e data da invoice
