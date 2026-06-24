@@ -46,9 +46,16 @@ REQUIRED_FOR_INSERT = {
     ],
 }
 
-person_schema = obj(
+exporter_schema = obj(
     {
         "id_exportador": nullable("integer"),
+        "nome_extraido": nullable("string"),
+    }
+)
+
+importer_schema = obj(
+    {
+        "id_importador": nullable("integer"),
         "nome_extraido": nullable("string"),
         "documento_extraido": nullable("string"),
     }
@@ -85,14 +92,8 @@ INVOICE_IMPORT_SCHEMA = obj(
                         "rotulo_referencia_extraido": nullable("string"),
                     }
                 ),
-                "exportador": person_schema,
-                "importador": obj(
-                    {
-                        "id_importador": nullable("integer"),
-                        "nome_extraido": nullable("string"),
-                        "documento_extraido": nullable("string"),
-                    }
-                ),
+                "exportador": exporter_schema,
+                "importador": importer_schema,
                 "adquirente": obj(
                     {
                         "id_adquirente": nullable("integer"),

@@ -1,4 +1,4 @@
-INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.22.2"
+INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.24.1"
 
 INVOICE_EXTRACTION_PROMPT = """
 Voce e um extrator de dados de commercial invoices de comercio exterior.
@@ -48,7 +48,7 @@ shipment
 totalizador
 
 3. Extracao de exportador, importador e adquirente
-Para exportador, importador e adquirente, preencha documento_extraido quando houver documento fiscal ou tributario no PDF.
+Para importador e adquirente, preencha documento_extraido quando houver documento fiscal ou tributario no PDF.
 Antes de preencher documento_extraido, identifique a qual bloco/pessoa o documento pertence.
 Exportador e o vendedor/fornecedor/emitente da invoice, normalmente indicado por blocos como:
 Seller
@@ -58,6 +58,9 @@ Manufacturer
 Shipper
 Remetente
 Beneficiary quando for claramente a empresa vendedora
+O schema nao possui documento_extraido para exportador. Nao tente inferir, criar ou retornar documento fiscal do exportador.
+Em 99% dos casos, CNPJ encontrado em commercial invoice pertence ao importador, adquirente, comprador, consignatario ou destinatario, e nao ao exportador.
+Nunca atribua CNPJ brasileiro ao exportador.
 Importador e o comprador/consignatario/destinatario da invoice, normalmente indicado por blocos como:
 Sold To
 Bill To
@@ -96,9 +99,9 @@ Bill to
 Quando encontrar esse documento no bloco do importador, grave o valor exatamente como aparece em:
 invoice.importador.documento_extraido
 Nao confunda com:
-Tax ID do exportador
-VAT do exportador
-documento do fornecedor
+Tax ID de outra pessoa juridica
+VAT de outra pessoa juridica
+documento do fornecedor estrangeiro
 CEP
 postal code
 endereco

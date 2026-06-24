@@ -139,7 +139,6 @@ def parse_invoice_text(
     _normalize_invoice_number(parsed, text)
     _normalize_customer_order_reference(parsed, text)
     _sanitize_importer_document(parsed, text)
-    _sanitize_party_documents(parsed)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -272,7 +271,6 @@ def parse_invoice_pdf_file(
     _normalize_invoice_number(parsed, fallback_text)
     _normalize_customer_order_reference(parsed, fallback_text)
     _sanitize_importer_document(parsed, fallback_text)
-    _sanitize_party_documents(parsed)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
         "type": "pdf_invoice",
@@ -451,31 +449,6 @@ def _sanitize_importer_document(payload: dict[str, Any], text: str | None) -> No
             current_document,
         )
         importer["documento_extraido"] = None
-
-
-def _sanitize_party_documents(payload: dict[str, Any]) -> None:
-    invoice = payload.get("invoice")
-    if not isinstance(invoice, dict):
-        return
-
-    importer = invoice.get("importador")
-    exporter = invoice.get("exportador")
-    if not isinstance(importer, dict) or not isinstance(exporter, dict):
-        return
-
-    importer_document = importer.get("documento_extraido")
-    exporter_document = exporter.get("documento_extraido")
-    if not _is_brazilian_tax_document(importer_document) or not _is_brazilian_tax_document(exporter_document):
-        return
-
-    if _only_digits(importer_document) != _only_digits(exporter_document):
-        return
-
-    logger.info(
-        "stage=exporter_document_discarded reason=same_as_importer_document document=%s",
-        exporter_document,
-    )
-    exporter["documento_extraido"] = None
 
 
 def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str | None:
