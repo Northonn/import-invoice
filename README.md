@@ -28,6 +28,7 @@ Parametros opcionais de query:
 - `id_processoimportacao`: ID do processo de importacao, se ja existir.
 - `include_extracted_text`: inclui o texto extraido dentro de `invoice_import.source.extracted_text`. Padrao: `false`.
 - `openai_model`: modelo usado na analise da invoice. Se omitido, usa `OPENAI_MODEL`. Permitidos: `gpt-4.1-mini`, `gpt-4.1-mini-2025-04-14`, `gpt-5-mini`, `gpt-5-mini-2025-08-07`, `gpt-4o-mini`, `gpt-4o-mini-2024-07-18`.
+- `auxiliary_ocr`: nos endpoints `parse-pdf-openai`, extrai OCR auxiliar para ajudar a OpenAI e o fallback de campos como CNPJ do importador. Padrao: `true`.
 
 ## Publicacao com Docker
 

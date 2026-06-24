@@ -457,11 +457,11 @@ def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str
     candidates: list[tuple[int, str]] = []
 
     for match in re.finditer(
-        r"(invoice\s+address|delivery\s+address|consignee|buyer|importer|customer|sold\s+to|ship\s+to|bill\s+to)",
+        r"(invoice\s+address|delivery\s+address|consignee|buyer|importer|customer|sold\s+to|ship\s+to|bill\s+to|se(?:n|ñ)ores|domicilio|n[°o]?\s*ident\.?\s*fiscal|dest\.?\s*comprobante)",
         normalized_text,
         re.IGNORECASE,
     ):
-        block = normalized_text[match.start() : match.start() + 700]
+        block = normalized_text[match.start() : match.start() + 900]
         for cnpj_match in cnpj_pattern.finditer(block):
             if _is_valid_cnpj(cnpj_match.group(0)):
                 candidates.append((match.start(), cnpj_match.group(0)))

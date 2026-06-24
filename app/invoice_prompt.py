@@ -1,4 +1,4 @@
-INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.24.3"
+INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.24.4"
 
 INVOICE_EXTRACTION_PROMPT = """
 # Prompt Consolidado - Extracao de Invoices de Importacao
@@ -37,6 +37,7 @@ Voce e um extrator de dados de commercial invoices de comercio exterior para imp
 - Se um CNPJ valido aparecer no mesmo bloco, abaixo, acima ou proximo ao nome/endereco do importador, comprador, consignatario ou destinatario, preencha `invoice.importador.documento_extraido`.
 - Blocos fortes de importador: `Sold To`, `Bill To`, `Ship To`, `Consignee`, `Buyer`, `Importer`, `Customer`, `Invoice address`, `Delivery address`.
 - Quando houver CNPJ proximo ao nome do importador, priorize esse CNPJ mesmo que o texto auxiliar esteja ausente, quebrado pelo OCR ou apareca em uma linha separada.
+- Em invoices argentinas ou em espanhol, o importador pode aparecer em `Señores`/`Senores` e o CNPJ brasileiro pode aparecer na linha `Domicilio` junto do endereco; nesse caso, preencha `invoice.importador.nome_extraido` com o nome em `Señores` e `invoice.importador.documento_extraido` com o CNPJ da linha de domicilio.
 - Preserve o CNPJ exatamente como aparece no documento.
 - Nao confunda CNPJ com CEP, telefone, conta bancaria, VAT estrangeiro, Tax ID estrangeiro, postal code, endereco ou numero de registro do exportador.
 - Nunca atribua CNPJ brasileiro ao exportador.

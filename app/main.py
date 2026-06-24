@@ -265,7 +265,7 @@ async def parse_invoice_pdf_openai_multipart(
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
     openai_model: str | None = Depends(build_openai_model),
-    auxiliary_ocr: bool = Query(default=False),
+    auxiliary_ocr: bool = Query(default=True),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_start filename=%s", request_id, file.filename)
@@ -386,7 +386,7 @@ async def parse_invoice_pdf_openai_raw(
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
     openai_model: str | None = Depends(build_openai_model),
-    auxiliary_ocr: bool = Query(default=False),
+    auxiliary_ocr: bool = Query(default=True),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_start filename=%s", request_id, filename)
