@@ -1,4 +1,4 @@
-INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.24.4"
+INVOICE_EXTRACTION_PROMPT_VERSION = "2026.06.30.1"
 
 INVOICE_EXTRACTION_PROMPT = """
 # Prompt Consolidado - Extracao de Invoices de Importacao
@@ -30,7 +30,17 @@ Voce e um extrator de dados de commercial invoices de comercio exterior para imp
 - Se houver duvida sobre a qual pessoa pertence um documento, deixe o documento com o importador.
 - Nao confunda CNPJ com CEP, telefone, conta bancaria, VAT estrangeiro, Tax ID estrangeiro ou numero de registro do exportador.
 
-### 2.1 Documento do importador brasileiro
+### 2.1 Importador em bloco sem label
+
+- O importador pode aparecer como um bloco de endereco sem nenhum rotulo como `Buyer`, `Consignee`, `Sold To`, `Ship To` ou `Bill To`.
+- Em invoices estrangeiras, trate como forte candidato a importador qualquer bloco isolado contendo nome de empresa, endereco brasileiro, `CEP`, cidade/UF e `Brazil`/`Brasil`.
+- Esse bloco normalmente aparece no topo da primeira pagina, frequentemente no canto superior esquerdo ou abaixo do cabecalho/logo do exportador.
+- Se houver um bloco sem label com linhas como nome da empresa, rua/endereco, `CEP 00000-000 cidade UF Brazil` e `BRAZIL`, use a primeira linha do bloco como `invoice.importador.nome_extraido`.
+- Nao confunda esse bloco com o exportador. O exportador normalmente aparece no logo, cabecalho, rodape, assinatura, dados bancarios, VAT estrangeiro ou endereco do emissor.
+- Nao use `Customer No.`, `Clerk`, telefone, e-mail, pedido, invoice number ou numero interno como nome do importador. `Customer No.` e apenas codigo do cliente.
+- Em invoices Fischer, quando existir um bloco solto no topo esquerdo com endereco brasileiro, ele deve ser tratado como importador/destinatario. Exemplo: `ZEN SA Industria Metalurgica` seguido de endereco em Brusque SC Brazil deve preencher `invoice.importador.nome_extraido`.
+
+### 2.2 Documento do importador brasileiro
 
 - Para empresas brasileiras, procure CNPJ em formatos como `00.000.000/0000-00` ou `00000000000000`.
 - O CNPJ pode aparecer com rotulos como `CNPJ`, `CPF/CNPJ`, `Tax ID`, `Federal Tax ID`, `VAT`, `inscricao federal` ou sem rotulo claro.

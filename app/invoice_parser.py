@@ -141,6 +141,7 @@ def parse_invoice_text(
 
     _normalize_invoice_number(parsed, text)
     _normalize_customer_order_reference(parsed, text)
+    _normalize_unlabeled_brazilian_importer_block(parsed, text)
     _sanitize_importer_document(parsed, text)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
@@ -276,6 +277,7 @@ def parse_invoice_pdf_file(
 
     _normalize_invoice_number(parsed, fallback_text)
     _normalize_customer_order_reference(parsed, fallback_text)
+    _normalize_unlabeled_brazilian_importer_block(parsed, fallback_text)
     _sanitize_importer_document(parsed, fallback_text)
     parsed["schema_version"] = "1.0"
     parsed["source"] = {
@@ -455,6 +457,99 @@ def _sanitize_importer_document(payload: dict[str, Any], text: str | None) -> No
             current_document,
         )
         importer["documento_extraido"] = None
+
+
+def _normalize_unlabeled_brazilian_importer_block(payload: dict[str, Any], text: str | None) -> None:
+    if not text:
+        return
+
+    invoice = payload.get("invoice")
+    if not isinstance(invoice, dict):
+        return
+
+    importer = invoice.get("importador")
+    if not isinstance(importer, dict):
+        return
+
+    current_name = importer.get("nome_extraido")
+    if isinstance(current_name, str) and _looks_like_real_company_name(current_name):
+        return
+
+    candidate = _find_unlabeled_brazilian_importer_name(text)
+    if candidate:
+        importer["nome_extraido"] = candidate
+
+
+def _find_unlabeled_brazilian_importer_name(text: str) -> str | None:
+    lines = [_clean_text_line(line) for line in text.replace("\r", "\n").split("\n")]
+    lines = [line for line in lines if line]
+
+    for index, line in enumerate(lines):
+        if not _looks_like_real_company_name(line):
+            continue
+
+        block = lines[index : index + 5]
+        if _looks_like_brazilian_address_block(block):
+            return line
+
+    return None
+
+
+def _looks_like_brazilian_address_block(lines: list[str]) -> bool:
+    if len(lines) < 3:
+        return False
+
+    joined = "\n".join(lines)
+    first_detail = lines[1] if len(lines) > 1 else ""
+    has_brazil = re.search(r"\b(?:brazil|brasil)\b", joined, re.IGNORECASE) is not None
+    has_cep = re.search(r"\b(?:cep\s*)?\d{5}-?\d{3}\b", joined, re.IGNORECASE) is not None
+    address_pattern = r"\b(?:rua|avenida|av\.?|rodovia|estrada|street|st\.?|road|rd\.?|no\.?|n[ºo]\.?|cep)\b"
+    has_address_word = re.search(
+        address_pattern,
+        joined,
+        re.IGNORECASE,
+    ) is not None
+    first_detail_has_address = re.search(
+        address_pattern,
+        first_detail,
+        re.IGNORECASE,
+    ) is not None
+    first_detail_is_another_company = _looks_like_real_company_name(first_detail) and not first_detail_has_address
+    if first_detail_is_another_company:
+        return False
+
+    has_address_or_cep_near_name = first_detail_has_address or re.search(
+        r"\b(?:rua|avenida|av\.?|rodovia|estrada|street|st\.?|road|rd\.?|no\.?|n[ºo]\.?|cep)\b",
+        "\n".join(lines[1:3]),
+        re.IGNORECASE,
+    ) is not None
+    has_brazilian_state = re.search(
+        r"\b(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b",
+        joined,
+    ) is not None
+    return has_brazil and has_cep and has_address_or_cep_near_name and (has_address_word or has_brazilian_state)
+
+
+def _looks_like_real_company_name(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+
+    cleaned = _clean_text_line(value)
+    if len(cleaned) < 4:
+        return False
+    if re.search(r"\d", cleaned):
+        return False
+    if re.search(
+        r"\b(?:customer\s+no|invoice|date|clerk|page|phone|fax|e-?mail|your\s+order|sales\s+order|delivery\s+note)\b",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        return False
+    return any(char.isalpha() for char in cleaned)
+
+
+def _clean_text_line(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip(" \t\r\n:;"))
 
 
 def _find_brazilian_document_near_importer(text: str, importer_name: Any) -> str | None:
