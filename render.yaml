@@ -13,6 +13,8 @@ services:
         value: "60"
       - key: OPENAI_MODEL
         value: "gpt-4.1-mini"
+      - key: OPENAI_TIMEOUT_SECONDS
+        value: "90"
       - key: OCR_ENABLED
         value: "true"
       - key: OCR_LANGUAGE

@@ -81,7 +81,7 @@ def parse_invoice_text(
         len(text),
         filename,
     )
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout_seconds)
     context = {
         "id_tenant": id_tenant,
         "id_usuario_incluiu": id_usuario_incluiu,
@@ -124,6 +124,9 @@ def parse_invoice_text(
     except OpenAIError as exc:
         logger.exception("request_id=%s stage=openai_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("request_id=%s stage=openai_unexpected_error error=%s", request_id, exc)
+        raise InvoiceParseError(f"Erro inesperado ao chamar OpenAI: {exc}") from exc
 
     usage = _build_usage_summary(response, selected_model)
     _log_usage(request_id=request_id, stage="openai_usage", usage=usage)
@@ -193,7 +196,7 @@ def parse_invoice_pdf_file(
         pdf_path.stat().st_size,
     )
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout_seconds)
     context = {
         "id_tenant": id_tenant,
         "id_usuario_incluiu": id_usuario_incluiu,
@@ -258,6 +261,9 @@ def parse_invoice_pdf_file(
     except OpenAIError as exc:
         logger.exception("request_id=%s stage=openai_pdf_error error=%s", request_id, exc)
         raise InvoiceParseError(f"Erro ao chamar OpenAI com PDF: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("request_id=%s stage=openai_pdf_unexpected_error error=%s", request_id, exc)
+        raise InvoiceParseError(f"Erro inesperado ao chamar OpenAI com PDF: {exc}") from exc
 
     usage = _build_usage_summary(response, selected_model)
     _log_usage(request_id=request_id, stage="openai_pdf_usage", usage=usage)

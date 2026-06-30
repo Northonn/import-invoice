@@ -157,6 +157,7 @@ def health() -> dict[str, Any]:
         "pdfbox_jar_exists": Path(settings.pdfbox_jar).exists(),
         "openai_configured": bool(settings.openai_api_key),
         "openai_model": settings.openai_model,
+        "openai_timeout_seconds": settings.openai_timeout_seconds,
         "allowed_openai_models": sorted(ALLOWED_OPENAI_MODELS),
         "ocr_enabled": settings.ocr_enabled,
         "ocr_language": settings.ocr_language,
@@ -184,7 +185,16 @@ def parse_text_to_invoice_import(
         )
     except InvoiceParseError as exc:
         logger.exception("request_id=%s stage=parse_error error=%s", request_id, exc)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail={"request_id": request_id, "stage": "parse_error", "message": str(exc)},
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("request_id=%s stage=parse_unexpected_error error=%s", request_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"request_id": request_id, "stage": "parse_unexpected_error", "message": str(exc)},
+        ) from exc
 
 
 @app.post("/v1/pdf/extract-text")
@@ -265,7 +275,7 @@ async def parse_invoice_pdf_openai_multipart(
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
     openai_model: str | None = Depends(build_openai_model),
-    auxiliary_ocr: bool = Query(default=True),
+    auxiliary_ocr: bool = Query(default=False),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai stage=request_start filename=%s", request_id, file.filename)
@@ -386,7 +396,7 @@ async def parse_invoice_pdf_openai_raw(
     _: None = Depends(require_api_key),
     context: dict[str, int | bool | None] = Depends(build_context),
     openai_model: str | None = Depends(build_openai_model),
-    auxiliary_ocr: bool = Query(default=True),
+    auxiliary_ocr: bool = Query(default=False),
 ) -> dict:
     request_id = new_request_id()
     logger.info("request_id=%s endpoint=/v1/invoice/parse-pdf-openai/raw stage=request_start filename=%s", request_id, filename)
@@ -451,7 +461,16 @@ def parse_pdf_file_to_invoice_import(
         )
     except InvoiceParseError as exc:
         logger.exception("request_id=%s stage=parse_pdf_error error=%s", request_id, exc)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail={"request_id": request_id, "stage": "parse_pdf_error", "message": str(exc)},
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("request_id=%s stage=parse_pdf_unexpected_error error=%s", request_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"request_id": request_id, "stage": "parse_pdf_unexpected_error", "message": str(exc)},
+        ) from exc
 
 
 def _elapsed_ms(started_at: float) -> int:

@@ -17,6 +17,7 @@ class Settings:
     api_key: str | None = os.getenv("API_KEY")
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    openai_timeout_seconds: int = _int_env("OPENAI_TIMEOUT_SECONDS", 90)
     max_upload_mb: int = _int_env("MAX_UPLOAD_MB", 25)
     pdfbox_timeout_seconds: int = _int_env("PDFBOX_TIMEOUT_SECONDS", 60)
     ocr_enabled: bool = os.getenv("OCR_ENABLED", "true").lower() in {"1", "true", "yes", "s"}

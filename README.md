@@ -28,7 +28,7 @@ Parametros opcionais de query:
 - `id_processoimportacao`: ID do processo de importacao, se ja existir.
 - `include_extracted_text`: inclui o texto extraido dentro de `invoice_import.source.extracted_text`. Padrao: `false`.
 - `openai_model`: modelo usado na analise da invoice. Se omitido, usa `OPENAI_MODEL`. Permitidos: `gpt-4.1-mini`, `gpt-4.1-mini-2025-04-14`, `gpt-5-mini`, `gpt-5-mini-2025-08-07`, `gpt-4o-mini`, `gpt-4o-mini-2024-07-18`.
-- `auxiliary_ocr`: nos endpoints `parse-pdf-openai`, extrai OCR auxiliar para ajudar a OpenAI e o fallback de campos como CNPJ do importador. Padrao: `true`.
+- `auxiliary_ocr`: nos endpoints `parse-pdf-openai`, extrai OCR auxiliar para ajudar a OpenAI e o fallback de campos como CNPJ do importador. Padrao: `false` para reduzir tempo/memoria em hospedagens com proxy curto; use `true` apenas quando necessario.
 
 ## Publicacao com Docker
 
@@ -87,7 +87,7 @@ curl -X POST "http://localhost:8000/v1/invoice/extract-and-parse/raw?filename=in
 Analisar PDF escaneado/imagem diretamente com OpenAI:
 
 ```bash
-curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai?id_tenant=1&id_usuario_incluiu=10&openai_model=gpt-4o-mini" \
+curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai?id_tenant=1&id_usuario_incluiu=10&openai_model=gpt-4o-mini&auxiliary_ocr=false" \
   -H "X-API-Key: troque-esta-chave" \
   -F "file=@invoice-escaneada.pdf;type=application/pdf"
 ```
@@ -95,7 +95,7 @@ curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai?id_tenant=1&id_u
 Analisar PDF bruto diretamente com OpenAI:
 
 ```bash
-curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai/raw?filename=invoice.pdf&id_tenant=1&id_usuario_incluiu=10&openai_model=gpt-4o-mini" \
+curl -X POST "http://localhost:8000/v1/invoice/parse-pdf-openai/raw?filename=invoice.pdf&id_tenant=1&id_usuario_incluiu=10&openai_model=gpt-4o-mini&auxiliary_ocr=false" \
   -H "X-API-Key: troque-esta-chave" \
   -H "Content-Type: application/pdf" \
   --data-binary "@invoice.pdf"
@@ -125,6 +125,7 @@ Para o endpoint com analise por IA, configure tambem no Render:
 ```text
 OPENAI_API_KEY=sua-chave-openai
 OPENAI_MODEL=gpt-4.1-mini
+OPENAI_TIMEOUT_SECONDS=90
 ```
 
 Observacao: no plano gratis, o servico pode dormir apos alguns minutos sem trafego. A primeira chamada depois disso pode demorar.
@@ -187,6 +188,7 @@ Depois de extrair o texto, o proximo passo e criar uma camada de parser para ide
 - `API_KEY`: se definida, exige header `X-API-Key`.
 - `OPENAI_API_KEY`: chave da OpenAI usada para transformar o texto extraido em JSON.
 - `OPENAI_MODEL`: modelo usado na analise da invoice. Padrao: `gpt-4.1-mini`.
+- `OPENAI_TIMEOUT_SECONDS`: timeout da chamada OpenAI. Padrao: `90`.
 - `PDFBOX_JAR`: caminho do `pdfbox-app.jar`.
 - `JAVA_BIN`: binario Java. Padrao: `java`.
 - `MAX_UPLOAD_MB`: tamanho maximo do PDF. Padrao: `25`.
